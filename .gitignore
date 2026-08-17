@@ -1,0 +1,8 @@
+# DBが正本。公開リポジトリに商品データは入れない（サイズと再現性の問題）。
+data/*.sqlite
+secrets/
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+data/x_queue.txt

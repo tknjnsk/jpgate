@@ -1,0 +1,57 @@
+# 商品名の日本語 → 英語 用語集。
+#
+# 方針: 翻訳ではなく**海外コレクターが実際に使っている呼称**に置き換える。
+# eBay や海外フォーラムで検索して当たる綴りが正解。訳語の美しさは関係ない。
+# 当たらない語は載せない（載せないと日本語のまま残るだけで、事故にはならない）。
+
+# --- 販売形態のラベル（商品名の頭に付く角括弧） ---
+"抽選販売": "Lottery"
+"事前CTM抽選": "Advance CTM Lottery"
+"開催記念商品": "Event Exclusive"
+"ストアイベント限定品": "Store Event Exclusive"
+"プレミアムバンダイ限定": "Premium Bandai Exclusive"
+"魂ウェブ商店限定": "Tamashii Web Shop Exclusive"
+"受注生産": "Made-to-Order"
+"再販": "Restock"
+"予約": "Pre-order"
+
+# --- ブランド ---
+"魂ウェブ商店": "Tamashii Web Shop"
+"ガンダムベース": "Gundam Base"
+"超合金魂": "Soul of Chogokin"
+"超合金": "Chogokin"
+"ROBOT魂": "ROBOT SPIRITS"
+"聖闘士聖衣神話": "Saint Cloth Myth"
+"figma": "figma"
+
+# --- 作品名 ---
+"機動戦士ガンダム": "Mobile Suit Gundam"
+"機動武闘伝Gガンダム": "Mobile Fighter G Gundam"
+"新機動戦記ガンダムW": "Gundam Wing"
+"仮面ライダー": "Kamen Rider"
+"ウルトラマン": "Ultraman"
+"ドラゴンボール": "Dragon Ball"
+"ワンピース": "One Piece"
+"美少女戦士セーラームーン": "Sailor Moon"
+"聖闘士星矢": "Saint Seiya"
+"デジモン": "Digimon"
+"ゴッドガンダム": "God Gundam"
+"ガンダム": "Gundam"
+"ザク": "Zaku"
+"ストライクフリーダム": "Strike Freedom"
+"ユニコーン": "Unicorn"
+"サザビー": "Sazabi"
+"仮面ライダーガヴ": "Kamen Rider Gavv"
+"ウルトラマンゼット": "Ultraman Z"
+"孫悟空": "Son Goku"
+"ベジータ": "Vegeta"
+"ルフィ": "Luffy"
+"スーパー戦隊": "Super Sentai"
+"プリキュア": "Pretty Cure"
+
+# --- 状態・属性 ---
+"リバイバル版": "Revival Ver."
+"限定": "Exclusive"
+"セット": "Set"
+"版": "Ver."
+"税込": "incl. tax"

@@ -1,0 +1,86 @@
+# JPGate 設定
+#
+# 秘密（Discord Webhook）はここに書かない。環境変数 JPGATE_DISCORD_WEBHOOK。
+
+business:
+  brand_name: "JPGate"
+  # 通知とWebページのCTAリンク。代行の申し込み導線。
+  contact_url: "https://discord.gg/CHANGEME"
+  # 独自ドメイン。設定すると docs/CNAME を書き出して GitHub Pages に当たる。
+  # 空のあいだは <user>.github.io/<repo>/ で公開される。
+  custom_domain: ""
+
+# --------------------------------------------------------------------------
+# アフィリエイト
+#
+# ID は環境変数が優先される（JPGATE_EBAY_CAMPAIGN_ID / JPGATE_AMAZON_US_TAG）。
+# **空のあいだリンクは1本も生成されない。** 審査に通る前にリンクを出すと
+# 規約違反になるので、既定は空。
+#
+# eBay Partner Network も Amazon アソシエイトも、**審査に実在するサイトが要る**。
+# 順序は「公開 → 記事が溜まる → 申請 → IDを入れる」で、逆はできない。
+# Amazon は登録後180日以内に売上が無いとアカウントが閉じるので、
+# 流入が出てから申請すること。
+# --------------------------------------------------------------------------
+affiliate:
+  ebay_campaign_id: ""
+  amazon_us_tag: ""
+
+sources:
+  - name: p-bandai
+
+    # ------------------------------------------------------------------
+    # ソース単位のゲート宣言。
+    #
+    # evidence と verified_on は必須。根拠を書けないものは宣言できない。
+    # サイトのポリシーは変わるので、確認日が古くなったら doctor が警告する。
+    # ------------------------------------------------------------------
+    gates:
+      - key: G2_JP_ADDRESS
+        evidence: >-
+          p-bandai.jp の配送先は日本国内のみ。決済・配送先の選択に
+          海外住所の選択肢が存在しない。海外向けは別サイト
+          (Premium Bandai USA/Asia) で品揃えが異なる。
+        verified_on: 2026-08-17
+
+    per_page: 20
+    delay_sec: 1.5
+    timeout: 60
+
+    # ------------------------------------------------------------------
+    # 走査対象。
+    #
+    # URL は https://p-bandai.jp/<shop>/list-da<per_page>-n<offset>/ 。
+    # 存在しないショップ名を書くとトップページが返るが、パーサ側で
+    # 弾いて ok=False にするので黙って0件にはならない。
+    #
+    # 一覧の既定の並びは新着順なので、先頭数ページで当日ぶんは拾える。
+    # 取りこぼしが怖いショップは max_pages を上げる。
+    #
+    # 未対応: gundambase と fashion はカテゴリ階層が要る別URL形式
+    #         (gundambase/a<N>/list-...) のため、このリストでは動かない。
+    # ------------------------------------------------------------------
+    shops:
+      - shop: tamashiiwebshouten
+        label: "Tamashii Web Shop"
+        max_pages: 6
+      - shop: hobby
+        label: "Hobby (Gunpla / Model Kits)"
+        max_pages: 5
+      - shop: carddas
+        label: "Carddass"
+        max_pages: 3
+
+notify:
+  # 1回の実行でDiscordに投げる上限。誤検知が爆発したときの被害を切る。
+  max_per_run: 20
+  # 用語集での訳出率がこれ未満なら「原題のまま」と注記する。
+  min_translation_coverage: 0.5
+
+output:
+  db: data/jpgate.sqlite
+  # GitHub Pages を main ブランチの /docs から配信するため docs 固定。
+  site_dir: docs
+  glossary: data/glossary.yaml
+  # 「終了」欄の掲載数。古いものを載せ続けると二次流通にも無い商品が並ぶ。
+  closed_limit: 60

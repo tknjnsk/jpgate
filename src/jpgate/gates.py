@@ -1,0 +1,151 @@
+"""ゲート判定 ―― 「日本にいないと物理的にできないこと」の同定。
+
+この事業の堀は「日本人だから」ではなく、**海外の客がどう頑張っても越えられない
+具体的な関門**にある。関門が特定できて初めて代行に値段が付く。
+
+したがってゲートは推測してはいけない。根拠は次の2つに限る:
+
+  (a) アイテム由来 : 販売元が自分で出している機械可読なフラグ（抽選販売アイコン）
+  (b) ソース由来   : サイト全体のポリシー。`config.yaml` に **根拠の引用と
+                     確認日を添えて**宣言する。書いてなければ存在しない扱い。
+
+どちらの根拠も無ければ `UNKNOWN` であって「ゲート無し」ではない。
+UNKNOWN の商品に代行のCTAを出してはいけない（越えられる関門を
+「越えられない」と売ることになる）。
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from .models import ICON_LOT_SALES, Item
+
+# --------------------------------------------------------------------------
+# ゲート定義
+# --------------------------------------------------------------------------
+G1_JP_PHONE = "G1_JP_PHONE"
+G2_JP_ADDRESS = "G2_JP_ADDRESS"
+G3_JP_PAYMENT = "G3_JP_PAYMENT"
+G4_IN_STORE = "G4_IN_STORE"
+G5_JP_ID = "G5_JP_ID"
+
+
+@dataclass(frozen=True)
+class GateDef:
+    key: str
+    label_en: str
+    label_ja: str
+    #: 客がこれを越えられない理由。そのまま営業コピーになる。
+    why_en: str
+
+
+GATE_DEFS: dict[str, GateDef] = {
+    G1_JP_PHONE: GateDef(
+        G1_JP_PHONE,
+        "Japanese phone number",
+        "日本の携帯電話番号",
+        "Entry requires SMS verification on a Japanese mobile number. "
+        "Overseas numbers are rejected at signup.",
+    ),
+    G2_JP_ADDRESS: GateDef(
+        G2_JP_ADDRESS,
+        "Japanese shipping address",
+        "日本国内の配送先",
+        "The store ships to domestic addresses only. No international option exists at checkout.",
+    ),
+    G3_JP_PAYMENT: GateDef(
+        G3_JP_PAYMENT,
+        "Japanese payment method",
+        "国内発行の決済手段",
+        "Checkout accepts Japanese-issued cards, konbini or carrier billing only.",
+    ),
+    G4_IN_STORE: GateDef(
+        G4_IN_STORE,
+        "In-person at a Japanese store",
+        "実店舗での抽選・受取",
+        "Allocation happens in a physical store in Japan. There is no online path at all.",
+    ),
+    G5_JP_ID: GateDef(
+        G5_JP_ID,
+        "Japanese ID document",
+        "日本の本人確認書類",
+        "The account requires identity verification against a Japanese-issued document.",
+    ),
+}
+
+#: 判断材料が無い状態。「ゲート無し」と混ぜないための明示的な値。
+UNKNOWN = "UNKNOWN"
+
+
+@dataclass(frozen=True)
+class SourceGate:
+    """`config.yaml` で宣言するソース単位のゲート。
+
+    `evidence` と `verified_on` は必須。根拠を書けないものは宣言できない、
+    というのがこのクラスの存在理由。
+    """
+
+    key: str
+    evidence: str
+    verified_on: str
+
+    @staticmethod
+    def from_config(raw: dict) -> "SourceGate":
+        for required in ("key", "evidence", "verified_on"):
+            if not raw.get(required):
+                raise ValueError(
+                    f"source gate の {required} が空です。"
+                    f"根拠と確認日の無いゲートは宣言できません: {raw!r}"
+                )
+        key = raw["key"]
+        if key not in GATE_DEFS:
+            raise ValueError(f"未知のゲート {key!r}。GATE_DEFS に無いものは使えません")
+        return SourceGate(key, raw["evidence"], str(raw["verified_on"]))
+
+
+@dataclass(frozen=True)
+class GateVerdict:
+    """1商品のゲート判定。"""
+
+    #: 確定したゲートのキー。空なら判断材料が無い。
+    keys: tuple[str, ...]
+    #: keys が空のとき True。`not keys` と同義だが、呼び出し側で
+    #: 「ゲート無し」と読み違えないように名前を与えている。
+    unknown: bool
+    #: 各ゲートをどこから得たか（キー -> 根拠文字列）。
+    evidence: dict[str, str]
+
+    @property
+    def sellable(self) -> bool:
+        """代行のCTAを出してよいか。UNKNOWN では出さない。"""
+        return bool(self.keys)
+
+
+def evaluate(item: Item, source_gates: list[SourceGate]) -> GateVerdict:
+    """アイテムとソース宣言からゲートを決める。
+
+    アイテム由来の根拠は現状ひとつだけ ―― 抽選販売アイコン。
+    プレミアムバンダイの抽選は会員登録が前提で、会員登録には日本の携帯番号での
+    SMS認証と国内決済が要る。したがって抽選販売アイコンは G1 と G3 の証拠になる。
+    ここを増やすときは必ず実データで観測できるフラグに紐づけること。
+    """
+    evidence: dict[str, str] = {}
+
+    for sg in source_gates:
+        evidence[sg.key] = f"{sg.evidence}（確認 {sg.verified_on}）"
+
+    if ICON_LOT_SALES in item.icons:
+        note = "販売ページに「抽選販売」アイコン。応募には会員登録が必須。"
+        # ソース宣言のほうが具体的なら上書きしない（確認日が入っているため）。
+        evidence.setdefault(G1_JP_PHONE, note)
+        evidence.setdefault(G3_JP_PAYMENT, note)
+
+    keys = tuple(sorted(evidence))
+    return GateVerdict(keys=keys, unknown=not keys, evidence=evidence)
+
+
+def badges_en(verdict: GateVerdict) -> list[str]:
+    """通知・Webページに出すバッジ文字列。"""
+    if verdict.unknown:
+        return ["⚠️ Access requirements unverified"]
+    return [f"🚫 {GATE_DEFS[k].label_en} required" for k in verdict.keys]
