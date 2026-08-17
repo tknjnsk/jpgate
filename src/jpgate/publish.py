@@ -76,6 +76,8 @@ def render_site(
 
     parts: list[str] = [
         f"<title>{html.escape(cfg.brand_name)} — Japan-exclusive release tracker</title>",
+        _head_meta(cfg, len(rows), gated),
+        _analytics(cfg),
         _CSS,
         "<header>",
         f"<h1>{html.escape(cfg.brand_name)}</h1>",
@@ -150,6 +152,63 @@ def _closed_section(
         out.append(_card(row, verdict, glossary, links=links, lottery=lottery, cfg=cfg))
     out.append("</ul></section>")
     return "\n".join(out)
+
+
+def _head_meta(cfg: Config, open_count: int, gated: int) -> str:
+    """OGP と検索用のメタタグ。
+
+    これが無いと X / Discord / Reddit にURLを貼っても素のリンクになり、
+    プレビューが出ない。共有がクリックに繋がらないので、集客の前提設備。
+    og:image は**絶対URL**でないと無視される（相対パスは動かない）。
+    """
+    base = cfg.site_url.rstrip("/")
+    desc = (
+        f"{open_count} Japan-only figure and hobby releases open right now, "
+        f"{gated} of them impossible to order from abroad. "
+        "Pre-orders, lotteries and restocks tracked as they open — "
+        "each one says which barrier stops an overseas buyer."
+    )
+    title = f"{cfg.brand_name} — Japan-exclusive release tracker"
+    tags = [
+        '<meta charset="utf-8">',
+        '<meta name="viewport" content="width=device-width, initial-scale=1">',
+        f'<meta name="description" content="{html.escape(desc)}">',
+        f'<link rel="canonical" href="{base}/">',
+        '<meta property="og:type" content="website">',
+        f'<meta property="og:site_name" content="{html.escape(cfg.brand_name)}">',
+        f'<meta property="og:title" content="{html.escape(title)}">',
+        f'<meta property="og:description" content="{html.escape(desc)}">',
+        f'<meta property="og:url" content="{base}/">',
+        f'<meta property="og:image" content="{base}/og.png">',
+        '<meta property="og:image:width" content="1200">',
+        '<meta property="og:image:height" content="630">',
+        '<meta name="twitter:card" content="summary_large_image">',
+        f'<meta name="twitter:title" content="{html.escape(title)}">',
+        f'<meta name="twitter:description" content="{html.escape(desc)}">',
+        f'<meta name="twitter:image" content="{base}/og.png">',
+    ]
+    return "\n".join(tags)
+
+
+def _analytics(cfg: Config) -> str:
+    """アクセス解析のタグ。
+
+    未設定なら**何も出さない**。入っていないのに入っているつもりになるのが
+    一番まずいので、`readiness` はこのタグの実在を見て判定している。
+
+    Cookie を使わない選択肢に限っている（同意バナーが要らない）。
+    """
+    if cfg.analytics_cf_token:
+        return (
+            '<script defer src="https://static.cloudflareinsights.com/beacon.min.js" '
+            f"data-cf-beacon='{{\"token\": \"{cfg.analytics_cf_token}\"}}'></script>"
+        )
+    if cfg.analytics_goatcounter:
+        return (
+            f'<script data-goatcounter="https://{cfg.analytics_goatcounter}'
+            '.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>'
+        )
+    return ""
 
 
 def _month_label(month: str) -> str:
