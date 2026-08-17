@@ -339,6 +339,13 @@ def test_closed_lottery_card_sells_own_service_not_affiliate(tmp_path):
     store.close()
 
 
+def test_fullwidth_model_codes_become_searchable():
+    """型番が全角のままだと海外の検索に当たらない（`ＨＧ` では eBay で0件）。"""
+    g = Glossary({})
+    assert g.render("ＨＧ 1/144 ジェスタ").startswith("HG")
+    assert "RE/100" in g.render("ＲＥ/100 1/100 ガンダムリントヴルム")
+
+
 def test_notify_marks_only_after_send(tmp_path):
     store = Store(tmp_path / "t.sqlite")
     store.apply(crawl(item("1", [ICON_RESERVE])))

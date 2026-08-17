@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from pathlib import Path
 
 import yaml
@@ -35,7 +36,11 @@ class Glossary:
         return cls({str(k): str(v) for k, v in raw.items()})
 
     def render(self, title: str) -> str:
-        out = title
+        # 全角ラテン/数字を半角に潰してから当てる。プレミアムバンダイの
+        # 商品名は `ＨＧ 1/144` `ＲＥ/100` のように型番が全角で入ることがあり、
+        # そのままでは海外の検索に当たらない（`ＨＧ` では eBay で0件になる）。
+        # NFKC は日本語部分を壊さないので、置換の前段に置いて安全。
+        out = unicodedata.normalize("NFKC", title)
         for ja, en in self._pairs:
             out = out.replace(ja, en)
         return re.sub(r"\s{2,}", " ", out).strip()
