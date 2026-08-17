@@ -3,7 +3,8 @@
     jpgate doctor    各経路が生きているか検査する（スクレイパーは静かに嘘を返すので必須）
     jpgate scan      走査してイベントをDBに貯める
     jpgate notify    未通知イベントを Discord に流す
-    jpgate publish   site/index.html と site/x_queue.txt を作り直す
+    jpgate publish   docs/index.html と data/x_queue.txt を作り直す
+    jpgate readiness アフィリエイト審査に出せる状態か判定する
     jpgate run       scan → notify → publish（定期実行用）
 """
 
@@ -16,6 +17,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from . import config as config_mod
+from . import readiness
 from .config import Config
 from .gates import evaluate
 from .models import Item
@@ -246,6 +248,15 @@ def cmd_publish(cfg: Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_readiness(cfg: Config, args: argparse.Namespace) -> int:
+    store = Store(cfg.db_path)
+    try:
+        print(readiness.report(cfg, store))
+    finally:
+        store.close()
+    return 0
+
+
 def cmd_run(cfg: Config, args: argparse.Namespace) -> int:
     rc = cmd_scan(cfg, args)
     cmd_notify(cfg, args)
@@ -270,6 +281,7 @@ def main(argv: list[str] | None = None) -> int:
         ("scan", cmd_scan),
         ("notify", cmd_notify),
         ("publish", cmd_publish),
+        ("readiness", cmd_readiness),
         ("run", cmd_run),
     ):
         sub.add_parser(name).set_defaults(func=fn)
