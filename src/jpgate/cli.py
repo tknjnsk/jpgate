@@ -266,15 +266,22 @@ def cmd_run(cfg: Config, args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     _fix_console()
-    parser = argparse.ArgumentParser(prog="jpgate", description=__doc__)
-    parser.add_argument("--config", type=Path, default=None)
-    parser.add_argument("--max-pages", type=int, default=None)
-    parser.add_argument(
+    # 共通オプションはトップレベルとサブコマンドの両方に付ける。
+    # トップレベルだけに置くと `jpgate notify --no-dry-run` が
+    # 「unrecognized arguments」で落ちる（argparse はサブコマンドより前の
+    # 位置しか見ない）。自然な語順で書けないCLIは、定期実行の設定を
+    # 書くときに必ず間違える。
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--config", type=Path, default=None)
+    common.add_argument("--max-pages", type=int, default=None)
+    common.add_argument(
         "--dry-run",
         action=argparse.BooleanOptionalAction,
         default=True,
         help="notify: 既定は送信しない。実際に送るには --no-dry-run",
     )
+
+    parser = argparse.ArgumentParser(prog="jpgate", description=__doc__, parents=[common])
     sub = parser.add_subparsers(dest="cmd", required=True)
     for name, fn in (
         ("doctor", cmd_doctor),
@@ -284,7 +291,7 @@ def main(argv: list[str] | None = None) -> int:
         ("readiness", cmd_readiness),
         ("run", cmd_run),
     ):
-        sub.add_parser(name).set_defaults(func=fn)
+        sub.add_parser(name, parents=[common]).set_defaults(func=fn)
 
     args = parser.parse_args(argv)
     cfg = config_mod.load(args.config)

@@ -5,7 +5,9 @@
 business:
   brand_name: "JPGate"
   # 通知とWebページのCTAリンク。代行の申し込み導線。
-  contact_url: "https://discord.gg/CHANGEME"
+  # 有効期限なし・使用回数無制限で発行済み（2026-08-18 API で確認）。
+  # サイトとX投稿に埋め込まれるので、**このリンクは変更しないこと**。
+  contact_url: "https://discord.gg/fZutAxwg3f"
   # 独自ドメイン。設定すると docs/CNAME を書き出して GitHub Pages に当たる。
   # 空のあいだは <user>.github.io/<repo>/ で公開される。
   custom_domain: ""

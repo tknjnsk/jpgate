@@ -15,6 +15,7 @@ import urllib.request
 from .config import Config
 from .gates import GATE_DEFS, GateVerdict, badges_en
 from .models import (
+    ICON_LOT_SALES,
     EVENT_DEADLINE,
     EVENT_LOTTERY_OPEN,
     EVENT_RESERVATION_OPEN,
@@ -51,7 +52,15 @@ def build_embed(
         for key in verdict.keys:
             lines.append(f"• {GATE_DEFS[key].why_en}")
         lines.append("")
-        lines.append(f"**We are in Japan and can enter for you → {cfg.contact_url}**")
+        # 抽選と通常販売で提供する行為が違う。予約商品に "enter"(抽選に応募する)
+        # と書くのは単に誤り。関門の種類に合わせて動詞を変える。
+        lottery = ICON_LOT_SALES in tuple(json.loads(row["icons"]))
+        offer = (
+            "can enter the lottery for you"
+            if lottery
+            else "can order it and forward it to you"
+        )
+        lines.append(f"**We are in Japan and {offer} → {cfg.contact_url}**")
     else:
         lines.append("")
         lines.append(
@@ -85,6 +94,11 @@ def build_embed(
     return embed
 
 
+#: Discord は User-Agent の無いリクエストを 403 で弾く
+#: （urllib の既定 `Python-urllib/3.x` が該当。実測で踏んだ）。
+_UA = "JPGate/0.1 (+https://github.com/tknjnsk/jpgate)"
+
+
 def post(webhook: str, embeds: list[dict], timeout: int = 30) -> None:
     """Discord へ投げる。embed は1リクエスト10件が上限。"""
     for i in range(0, len(embeds), 10):
@@ -92,7 +106,7 @@ def post(webhook: str, embeds: list[dict], timeout: int = 30) -> None:
         req = urllib.request.Request(
             webhook,
             data=payload,
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", "User-Agent": _UA},
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=timeout) as resp:

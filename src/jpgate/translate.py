@@ -19,6 +19,10 @@ import yaml
 
 #: 用語集に無くても英字はそのまま通るので、全体が英字なら訳出済みとみなす。
 _RE_JA = re.compile(r"[぀-ヿ一-鿿]")
+#: 商品名に頻出する「YYYY年M月」。NFKC 後（半角化後）に当てる。
+_RE_YM = re.compile(r"(\d{4})年(\d{1,2})月")
+#: 「3次」= 3回目の生産ロット。語順が変わるので用語集では扱えない。
+_RE_BATCH = re.compile(r"(\d+)次")
 
 
 class Glossary:
@@ -41,9 +45,25 @@ class Glossary:
         # そのままでは海外の検索に当たらない（`ＨＧ` では eBay で0件になる）。
         # NFKC は日本語部分を壊さないので、置換の前段に置いて安全。
         out = unicodedata.normalize("NFKC", title)
+        # 「2026年11月」→「2026-11」。商品名に発送月が入る慣習があり、
+        # 年月の漢字が残ると英語話者には日付として読めない。
+        out = _RE_YM.sub(lambda m: f"{m.group(1)}-{int(m.group(2)):02d}", out)
+        # 「3次」→「batch 3」。生産ロットの回次はコレクターが気にする情報で、
+        # 落とせない。語順が入れ替わるので用語集では表現できない。
+        out = _RE_BATCH.sub(lambda m: f"batch {m.group(1)}", out)
+
+        # 日本語は語を空白で区切らないため、隣り合う語をそのまま置換すると
+        # 英単語が連結する（`ジョニー・ライデン専用ゲルググ` →
+        # `Johnny Ridden'sGelgoog`）。用語ごとに空白を足して回るのではなく、
+        # 置換時に必ず空白で囲み、あとで余分を畳む。
         for ja, en in self._pairs:
-            out = out.replace(ja, en)
-        return re.sub(r"\s{2,}", " ", out).strip()
+            out = out.replace(ja, f" {en} ")
+
+        out = re.sub(r"\s{2,}", " ", out)
+        # 括弧と句読点の内側に入った空白を戻す（`【 Restock 】` を避ける）。
+        out = re.sub(r"([【（\[(])\s+", r"\1", out)
+        out = re.sub(r"\s+([】）\])：:,、])", r"\1", out)
+        return out.strip()
 
     def coverage(self, title: str) -> float:
         """日本語文字がどれだけ消えたか。0.0〜1.0。
