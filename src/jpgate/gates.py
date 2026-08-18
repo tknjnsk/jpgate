@@ -37,6 +37,14 @@ class GateDef:
     label_ja: str
     #: 客がこれを越えられない理由。そのまま営業コピーになる。
     why_en: str
+    #: **転送業者(Buyee/ZenMarket等)が越えられない関門か。**
+    #:
+    #: ここが堀の定義。住所や決済は転送業者が1点数百円で解決しているので、
+    #: そこに代行を出すと「同じことを高く売る」ことになり選ばれない。
+    #: SMS認証・実店舗・本人確認だけが、転送業者に原理的に不可能な関門。
+    #: 掲載商品の実測(2026-08-18, 531件)では G1 が 13.2% で平均単価 ¥15,663、
+    #: G2 が 86.8% で平均 ¥5,300。**堀は件数では少なく、単価では3倍**。
+    beats_forwarder: bool = False
 
 
 GATE_DEFS: dict[str, GateDef] = {
@@ -46,30 +54,37 @@ GATE_DEFS: dict[str, GateDef] = {
         "日本の携帯電話番号",
         "Entry requires SMS verification on a Japanese mobile number. "
         "Overseas numbers are rejected at signup.",
+        beats_forwarder=True,
     ),
     G2_JP_ADDRESS: GateDef(
         G2_JP_ADDRESS,
         "Japanese shipping address",
         "日本国内の配送先",
         "The store ships to domestic addresses only. No international option exists at checkout.",
+        # 転送業者が解決済みの領域。ここに代行を出すと価格で必ず負ける。
+        beats_forwarder=False,
     ),
     G3_JP_PAYMENT: GateDef(
         G3_JP_PAYMENT,
         "Japanese payment method",
         "国内発行の決済手段",
         "Checkout accepts Japanese-issued cards, konbini or carrier billing only.",
+        # 同上。転送業者は代理決済を標準で提供している。
+        beats_forwarder=False,
     ),
     G4_IN_STORE: GateDef(
         G4_IN_STORE,
         "In-person at a Japanese store",
         "実店舗での抽選・受取",
         "Allocation happens in a physical store in Japan. There is no online path at all.",
+        beats_forwarder=True,
     ),
     G5_JP_ID: GateDef(
         G5_JP_ID,
         "Japanese ID document",
         "日本の本人確認書類",
         "The account requires identity verification against a Japanese-issued document.",
+        beats_forwarder=True,
     ),
 }
 
@@ -116,9 +131,23 @@ class GateVerdict:
     evidence: dict[str, str]
 
     @property
+    def exclusive_keys(self) -> tuple[str, ...]:
+        """転送業者が越えられない関門だけ。ここが自社の堀。"""
+        return tuple(k for k in self.keys if GATE_DEFS[k].beats_forwarder)
+
+    @property
     def sellable(self) -> bool:
-        """代行のCTAを出してよいか。UNKNOWN では出さない。"""
-        return bool(self.keys)
+        """代行のCTAを出してよいか。
+
+        UNKNOWN で出さないのは当然として、**住所・決済しか関門が無い商品にも
+        出さない**。そこは転送業者が1点数百円でやっている領域で、同じ作業を
+        高く売ることになる。1件1〜2時間を使うなら、越えられない関門がある
+        商品に使ったほうが手取りが3倍以上になる(平均単価 ¥15,663 対 ¥5,300)。
+
+        関門バッジ自体は全商品に出し続ける。「なぜ買えないか」を示すのは
+        サイトの情報価値そのもので、代行を売ることとは別だから。
+        """
+        return bool(self.exclusive_keys)
 
 
 def evaluate(item: Item, source_gates: list[SourceGate]) -> GateVerdict:
