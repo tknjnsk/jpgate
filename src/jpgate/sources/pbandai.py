@@ -26,6 +26,7 @@ import re
 import time
 import urllib.error
 import urllib.request
+from html import unescape
 
 from ..models import KNOWN_ICONS, CrawlResult, Item
 
@@ -83,7 +84,11 @@ def _assert_listing_page(html: str, url: str) -> None:
 
 
 def _clean(text: str) -> str:
-    return _RE_TAG.sub("", text).replace("&amp;", "&").replace("&nbsp;", " ").strip()
+    # 実体参照は標準の unescape に任せる。`&amp;` `&nbsp;` だけを個別に置換していたら
+    # `&#039;`（数値参照のアポストロフィ）が生のまま商品名に残り、
+    # X の投稿文で `WORLD TAMER&#039;S BOX` と出た。実体参照は
+    # 種類を数え上げるのではなく標準の復号に任せる。
+    return unescape(_RE_TAG.sub("", text)).replace(" ", " ").strip()
 
 
 def parse_listing(html: str, shop: str, url: str) -> tuple[list[Item], set[str]]:

@@ -41,6 +41,7 @@ class Config:
     db_path: Path
     site_dir: Path
     glossary_path: Path
+    lines_path: Path
     #: 代行の申し込み先。通知とWebページのCTAに出る。
     contact_url: str
     brand_name: str
@@ -97,6 +98,7 @@ def load(path: Path | str | None = None) -> Config:
         db_path=ROOT / out.get("db", "data/jpgate.sqlite"),
         site_dir=ROOT / out.get("site_dir", "docs"),
         glossary_path=ROOT / out.get("glossary", "data/glossary.yaml"),
+        lines_path=ROOT / out.get("lines", "data/lines.yaml"),
         contact_url=raw["business"]["contact_url"],
         brand_name=raw["business"].get("brand_name", "JPGate"),
         # ID は環境変数を優先する。審査に通ったら config を触らずに入れられる。

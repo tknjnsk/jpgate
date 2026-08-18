@@ -1,0 +1,76 @@
+# 商品ラインの分類表。
+#
+# 用途は2つ: サイトの絞り込みと、X投稿のハッシュタグ。
+#
+# 照合は **NFKC 正規化してから、パターンの長い順** に行う。理由は両方とも
+# 実データで踏んだ事故:
+#   - 正規化しないと `ＨＧ`(全角)が `HG` に当たらず、41%が未分類になった。
+#   - 長い順にしないと `MG ` が `MGEX` `MGSD` を食う。
+#     (KujiRadar で『ポケモンカードゲーム』が『ゲーム』に誤爆したのと同じ)
+#
+# どのパターンにも当たらなければ Other。**推測で寄せない。**
+#
+# hashtag は「英語圏のコレクターが実際に検索/フォローしているタグ」を選ぶ。
+# 訳語として正しいかは関係ない。多く付けるとスパムに見えるので、
+# 投稿には「ラインのタグ + #PBandai」の2つしか出さない。
+
+Gunpla:
+  hashtag: "#Gunpla"
+  lines:
+    MGEX: ["MGEX"]
+    MGSD: ["MGSD"]
+    "Perfect Grade": ["PERFECT GRADE", "PG "]
+    "Master Grade": ["MG "]
+    "Real Grade": ["RG "]
+    "High Grade": ["HGUC", "HGCE", "HGBF", "HG "]
+    "RE/100": ["RE/100"]
+    "Entry Grade": ["ENTRY GRADE"]
+    "SD Gundam": ["SDガンダム", "SDW HEROES", "BB戦士", "SD "]
+    "Figure-rise": ["Figure-rise"]
+    "30 Minutes": ["30MM", "30MS"]
+    "Other Kits": ["戦闘メカ", "機甲戦記", "ガンプラ", "LEDユニット", "ハイパーファンクション"]
+
+Figures:
+  hashtag: "#TamashiiNations"
+  lines:
+    "S.H.Figuarts": ["S.H.Figuarts", "S.H.フィギュアーツ"]
+    "S.H.MonsterArts": ["S.H.MonsterArts"]
+    FiguartsZERO: ["FiguartsZERO"]
+    "METAL BUILD": ["METAL BUILD"]
+    "METAL ROBOT SPIRITS": ["METAL ROBOT魂"]
+    "ROBOT SPIRITS": ["ROBOT魂"]
+    "METAL STRUCTURE": ["METAL STRUCTURE"]
+    "HI-METAL R": ["HI-METAL R"]
+    "GUNDAM FIX FIGURATION": ["GUNDAM FIX FIGURATION"]
+    "Soul of Chogokin": ["超合金魂", "DX超合金", "超合金"]
+    "Saint Cloth Myth": ["聖闘士聖衣神話"]
+    "ULTRA-ACT": ["ULTRA-ACT"]
+    "POP UP PARADE": ["POP UP PARADE"]
+    figma: ["figma"]
+    Nendoroid: ["ねんどろいど"]
+    MODEROID: ["MODEROID"]
+
+Trading Cards:
+  hashtag: "#TCG"
+  lines:
+    "UNION ARENA": ["UNION ARENA"]
+    # 「ONE PIECE カードゲーム」は空白の有無が揺れる。実データで両方確認済み。
+    "One Piece Card Game": ["ONE PIECE カードゲーム", "ONE PIECEカードゲーム", "ONEPIECEカードゲーム"]
+    "Dragon Ball Super Card Game": ["ドラゴンボールスーパーカードゲーム"]
+    "Gundam Card Game": ["ガンダムカードゲーム"]
+    "Battle Spirits": ["バトルスピリッツ"]
+    Carddass: ["カードダス"]
+    "Arsenal Base": ["アーセナルベース", "ガンダムトライエイジ"]
+
+Digimon:
+  hashtag: "#Digimon"
+  lines:
+    Vital Bracelet: ["ヴァイタルブレス", "デジヴァイス"]
+    Digimon: ["デジモン"]
+
+Goods:
+  hashtag: "#PremiumBandai"
+  lines:
+    Collab: ["LUFFY", "NBA"]
+    Tamagotchi: ["たまごっち"]
+    Adokenette: ["Adokenette"]

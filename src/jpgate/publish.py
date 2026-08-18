@@ -13,13 +13,14 @@ from __future__ import annotations
 import html
 import json
 import sqlite3
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .affiliate import DISCLOSURE_EN, links_for
 from .config import Config
 from .gates import GATE_DEFS, GateVerdict, SourceGate, evaluate
+from .lines import Classifier
 from .models import (
     ICON_LOT_SALES,
     STATUS_CLOSED,
@@ -61,14 +62,18 @@ def render_site(
     glossary: Glossary,
     cfg: Config,
     closed_rows: list[sqlite3.Row] | None = None,
+    classifier: Classifier | None = None,
 ) -> str:
+    classifier = classifier or Classifier({})
     by_month: dict[str, list[tuple[sqlite3.Row, GateVerdict]]] = defaultdict(list)
     gated = 0
+    cat_counts: Counter[str] = Counter()
     for row in rows:
         item = _row_to_item(row)
         verdict = evaluate(item, gates_by_source.get(row["source"], []))
         if verdict.sellable:
             gated += 1
+        cat_counts[classifier.classify(row["title"]).category] += 1
         by_month[row["ship_month"] or "TBA"].append((row, verdict))
 
     months = sorted(by_month, key=lambda m: (m == "TBA", m))
@@ -88,6 +93,7 @@ def render_site(
         f"barrier · updated {generated}</p>",
         f"<p><a class=\"cta\" href=\"{html.escape(cfg.contact_url)}\">"
         "Get alerts &amp; ask us to enter for you</a></p>",
+        _filter_bar(cat_counts, gated),
         "</header>",
         "<main>",
     ]
@@ -95,14 +101,20 @@ def render_site(
     for month in months:
         entries = by_month[month]
         label = "Ship date TBA" if month == "TBA" else _month_label(month)
-        parts.append(f"<section><h2>{html.escape(label)} <span>{len(entries)}</span></h2>")
-        parts.append("<ul class=\"grid\">")
+        parts.append(
+            f'<section><h2>{html.escape(label)} <span>{len(entries)}</span></h2>'
+        )
+        parts.append('<ul class="grid">')
         for row, verdict in entries:
-            parts.append(_card(row, verdict, glossary))
+            parts.append(_card(row, verdict, glossary, classifier=classifier))
         parts.append("</ul></section>")
 
     if closed_rows:
-        parts.append(_closed_section(closed_rows, gates_by_source, glossary, cfg))
+        parts.append(
+            _closed_section(closed_rows, gates_by_source, glossary, cfg, classifier)
+        )
+
+    parts.append(_FILTER_JS)
 
     parts.append("</main>")
 
@@ -120,11 +132,37 @@ def render_site(
     return "\n".join(parts)
 
 
+def _filter_bar(cat_counts: "Counter[str]", gated: int) -> str:
+    """カテゴリの絞り込みチップ。
+
+    発送月の見出しは「買うと決めたあと」の情報で、探している段階の人には
+    役に立たない。S.H.Figuarts を集めている人はラインで探す。
+    見出しは月のまま残し、**絞り込みの軸をラインにする**のが両立点。
+
+    JavaScript が動かなくても全件表示のままなので、壊れても情報は失われない。
+    """
+    chips = [
+        '<button class="chip on" data-cat="*">All '
+        f'<span>{sum(cat_counts.values())}</span></button>'
+    ]
+    for cat, n in cat_counts.most_common():
+        chips.append(
+            f'<button class="chip" data-cat="{html.escape(cat)}">'
+            f"{html.escape(cat)} <span>{n}</span></button>"
+        )
+    # 抽選だけを見たい層が確実にいる。ここが代行の対象そのもの。
+    chips.append(
+        f'<button class="chip gate" data-gate="1">🚫 Japan-only only <span>{gated}</span></button>'
+    )
+    return '<div class="filters">' + "".join(chips) + "</div>"
+
+
 def _closed_section(
     rows: list[sqlite3.Row],
     gates_by_source: dict[str, list[SourceGate]],
     glossary: Glossary,
     cfg: Config,
+    classifier: Classifier | None = None,
 ) -> str:
     """終了した商品。海外の客に残る経路は二次流通だけなので、そこへ繋ぐ。
 
@@ -149,7 +187,12 @@ def _closed_section(
             lottery=lottery,
             cfg=cfg.affiliate,
         )
-        out.append(_card(row, verdict, glossary, links=links, lottery=lottery, cfg=cfg))
+        out.append(
+            _card(
+                row, verdict, glossary, links=links, lottery=lottery, cfg=cfg,
+                classifier=classifier,
+            )
+        )
     out.append("</ul></section>")
     return "\n".join(out)
 
@@ -227,6 +270,7 @@ def _card(
     links: list | None = None,
     lottery: bool = False,
     cfg: Config | None = None,
+    classifier: Classifier | None = None,
 ) -> str:
     title_en = html.escape(glossary.render(row["title"]))
     status_label, status_cls = _STATUS_LABEL.get(row["status"], ("On sale", "on"))
@@ -264,9 +308,18 @@ def _card(
         )
         extra = f'<p class="act aff">{anchors}<span class="ad">ad</span></p>'
 
+    verdict_line = (classifier or Classifier({})).classify(row["title"])
+    # ライン名はカテゴリより具体的で、コレクターが実際に使う単位。
+    # 絞り込みはカテゴリ、目視はラインという二段構えにしている。
+    line_badge = (
+        f'<span class="line">{html.escape(verdict_line.line)}</span>'
+        if verdict_line.line
+        else ""
+    )
     return (
-        f'<li class="card">{img}'
-        f'<div><span class="tag {status_cls}">{status_label}</span>'
+        f'<li class="card" data-cat="{html.escape(verdict_line.category)}"'
+        f' data-gate="{1 if verdict.sellable else 0}">{img}'
+        f'<div><span class="tag {status_cls}">{status_label}</span>{line_badge}'
         f'<a class="name" href="{html.escape(row["url"])}">{title_en}</a>'
         f'<p class="price">{price} · {html.escape(row["shop"])}</p>'
         f'<ul class="gates">{badges}</ul>{extra}</div></li>'
@@ -279,10 +332,27 @@ def render_x_posts(
     glossary: Glossary,
     cfg: Config,
     limit: int = 10,
+    classifier: Classifier | None = None,
 ) -> str:
-    """X に手で貼る投稿文。ゲートが確定しているものだけ。"""
-    out: list[str] = []
+    """X に手で貼る投稿文。ゲートが確定しているものだけ。
+
+    **カテゴリを持ち回りで拾う。** 素直に上から10件取ると全部が同じ
+    カテゴリになり（実際に10件すべて Trading Cards になった）、順に貼ると
+    アカウントがBotに見える。1カテゴリ連投は最も安いフォロー解除の理由。
+    """
+    classifier = classifier or Classifier({})
+    buckets: dict[str, list[sqlite3.Row]] = defaultdict(list)
     for row in rows:
+        buckets[classifier.classify(row["title"]).category].append(row)
+
+    ordered: list[sqlite3.Row] = []
+    while any(buckets.values()) and len(ordered) < limit * 3:
+        for cat in list(buckets):
+            if buckets[cat]:
+                ordered.append(buckets[cat].pop(0))
+
+    out: list[str] = []
+    for row in ordered:
         if len(out) >= limit:
             break
         item = _row_to_item(row)
@@ -292,10 +362,15 @@ def render_x_posts(
         title = glossary.render(row["title"])
         gate = GATE_DEFS[verdict.keys[0]].label_en
         price = f"¥{row['price_jpy']:,}" if row["price_jpy"] else ""
+        # タグは2つまで。多いとスパムに見えて逆効果になる。
+        # ライン固有のタグ(#Gunpla 等)は英語圏で実際に検索・フォローされているが、
+        # 汎用タグ(#anime #figure)はノイズなので出さない。
+        line = classifier.classify(row["title"])
+        tags = " ".join(t for t in (line.hashtag, "#PBandai") if t)
         out.append(
             f"{_STATUS_LABEL.get(row['status'], ('On sale', ''))[0]}: {title} {price}\n"
             f"Japan only — needs a {gate}.\n{row['url']}\n"
-            f"We're in Japan: {cfg.contact_url}"
+            f"We're in Japan: {cfg.contact_url}\n{tags}"
         )
     return ("\n\n" + "-" * 60 + "\n\n").join(out)
 
@@ -320,6 +395,44 @@ def write(cfg: Config, site_html: str, x_posts: str) -> tuple[Path, Path]:
     (cfg.site_dir / ".nojekyll").write_text("", encoding="utf-8")
     return index, queue
 
+
+#: 絞り込み。外部ライブラリは使わない（CSPと読み込み速度の両方で不利になる）。
+#: カテゴリと「関門あり」は AND で効く。JS が動かない環境では全件出たままになる。
+_FILTER_JS = """<script>
+(function () {
+  var chips = document.querySelectorAll('.chip');
+  var cards = document.querySelectorAll('.card');
+  var cat = '*', gateOnly = false;
+
+  function apply() {
+    var shown = 0;
+    cards.forEach(function (c) {
+      var okCat = cat === '*' || c.dataset.cat === cat;
+      var okGate = !gateOnly || c.dataset.gate === '1';
+      var on = okCat && okGate;
+      c.hidden = !on;
+      if (on) shown++;
+    });
+    // 見出しごと空になった節は隠す。空の見出しだけが並ぶと壊れて見える。
+    document.querySelectorAll('section').forEach(function (s) {
+      var any = s.querySelector('.card:not([hidden])');
+      s.hidden = !any;
+    });
+    document.querySelectorAll('.chip').forEach(function (b) {
+      var isCat = b.dataset.cat !== undefined;
+      b.classList.toggle('on', isCat ? b.dataset.cat === cat : gateOnly);
+    });
+  }
+
+  chips.forEach(function (b) {
+    b.addEventListener('click', function () {
+      if (b.dataset.cat !== undefined) cat = b.dataset.cat;
+      else gateOnly = !gateOnly;
+      apply();
+    });
+  });
+})();
+</script>"""
 
 _CSS = """<style>
 :root{--bg:#fbfbfa;--fg:#1c1b19;--mut:#6b6862;--line:#e3e0da;--card:#fff;
@@ -352,6 +465,18 @@ text-transform:uppercase;padding:.15rem .45rem;border-radius:3px;color:#fff;
 margin-bottom:.4rem}
 .tag.lot{background:var(--lot)}.tag.pre{background:var(--pre)}.tag.on{background:var(--on)}
 .tag.shut{background:var(--mut)}
+.filters{display:flex;flex-wrap:wrap;gap:.5rem;margin:1.25rem 0 .5rem}
+.chip{font:inherit;font-size:.85rem;background:var(--card);color:var(--fg);
+border:1px solid var(--line);border-radius:999px;padding:.4rem .85rem;cursor:pointer;
+display:inline-flex;gap:.4rem;align-items:center}
+.chip span{color:var(--mut);font-size:.78rem}
+.chip:hover{border-color:var(--acc)}
+.chip.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.chip.on span{color:rgba(255,255,255,.75)}
+.line{display:inline-block;font-size:.68rem;font-weight:700;letter-spacing:.03em;
+color:var(--mut);border:1px solid var(--line);border-radius:3px;padding:.1rem .35rem;
+margin:0 0 .4rem .35rem;vertical-align:top}
+[hidden]{display:none !important}
 section.closed .card{opacity:.92}
 .note{color:var(--mut);font-size:.9rem;margin:-.5rem 0 1rem;max-width:60ch}
 .act{margin:.5rem 0 0;font-size:.82rem}

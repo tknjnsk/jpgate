@@ -147,6 +147,17 @@ def test_unknown_icon_is_surfaced_not_swallowed():
     assert "ITEM_BRAND_NEW_THING" in unknown
 
 
+def test_html_entities_are_decoded():
+    """`&#039;` が生のまま商品名に残り、X の投稿文に露出した。
+    実体参照は種類を数え上げず標準の復号に任せる。"""
+    html_doc = FIXTURE.read_text(encoding="utf-8").replace(
+        "METAL BUILD", "WORLD TAMER&#039;S BOX &amp; METAL BUILD"
+    )
+    items, _ = pbandai.parse_listing(html_doc, "tamashiiwebshouten", "u")
+    assert "WORLD TAMER'S BOX & METAL BUILD" in items[0].title
+    assert "&#" not in items[0].title
+
+
 def test_crawl_marks_failure_when_nothing_found():
     def fetch(url, timeout):
         return "<html>トップページ</html>"

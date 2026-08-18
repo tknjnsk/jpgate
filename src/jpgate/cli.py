@@ -20,6 +20,7 @@ from . import config as config_mod
 from . import readiness
 from .config import Config
 from .gates import evaluate
+from .lines import Classifier
 from .models import Item
 from .notify import build_embed, post
 from .publish import render_site, render_x_posts, write
@@ -234,10 +235,11 @@ def cmd_publish(cfg: Config, args: argparse.Namespace) -> int:
             print("! 掲載できる商品が0件。ページを書き換えずに終了します")
             return 1
         closed = store.recently_closed(limit=cfg.closed_limit)
+        classifier = Classifier.load(cfg.lines_path)
         index, queue = write(
             cfg,
-            render_site(rows, gates, glossary, cfg, closed_rows=closed),
-            render_x_posts(rows, gates, glossary, cfg),
+            render_site(rows, gates, glossary, cfg, closed_rows=closed, classifier=classifier),
+            render_x_posts(rows, gates, glossary, cfg, classifier=classifier),
         )
         print(f"- {index} (掲載 {len(rows)}件 / 終了 {len(closed)}件)")
         print(f"- {queue}")
