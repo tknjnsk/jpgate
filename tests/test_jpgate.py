@@ -552,25 +552,39 @@ def test_x_draft_too_long_for_discord_is_not_truncated():
 # --------------------------------------------------------------------------
 # 堀の定義（転送業者が越えられない関門だけを売る）
 # --------------------------------------------------------------------------
-def test_address_only_items_get_no_proxy_offer():
-    """住所しか関門が無い商品に代行を出さない.
+def test_address_only_items_are_still_sold():
+    """住所しか関門が無い商品でも代行を出す.
 
-    そこは転送業者(Buyee/ZenMarket等)が1点数百円でやっている領域で、
-    同じ作業を高く売ることになり価格で必ず負ける。掲載531件の実測では
-    ここが86.8%を占めるが、平均単価は¥5,300 で G1 の1/3。
+    一度 exclusive(SMS認証等)だけに絞ったが、その線引きの根拠が持たなかった
+    ので戻した。「転送業者はSMS認証を越えられない」は config に evidence を
+    持たない推論で、転送業者は日本の会社なので日本の番号を持っている。
+    **根拠の無い線引きで売り先を捨てない。**
     """
     from jpgate.gates import G2_JP_ADDRESS, SourceGate, evaluate
 
     addr_only = SourceGate(G2_JP_ADDRESS, "国内配送のみ", "2026-08-17")
     verdict = evaluate(item("1", []), [addr_only])
     assert verdict.keys == (G2_JP_ADDRESS,)
-    assert not verdict.unknown           # 関門は判明している
-    assert verdict.exclusive_keys == ()  # だが転送業者が越えられる
+    assert verdict.sellable
+    # 競合の有無は値付けの材料としてだけ残す。
+    assert verdict.exclusive_keys == ()
+
+
+def test_unknown_items_are_never_sold():
+    """関門が確認できない商品には出さない. ここは絞ったままにする.
+
+    越えられる関門を「越えられない」と売ることになるため。
+    sellable を緩めたときに、ここまで一緒に緩めてはいけない。
+    """
+    from jpgate.gates import evaluate
+
+    verdict = evaluate(item("1", []), [])
+    assert verdict.unknown
     assert not verdict.sellable
 
 
-def test_lottery_items_are_the_moat():
-    """抽選(SMS認証)は転送業者に原理的に不可能なので売れる."""
+def test_lottery_is_flagged_as_higher_pricing_power():
+    """抽選は値付けを強く取れる側として印が付く（売る条件ではない）."""
     from jpgate.gates import G1_JP_PHONE, evaluate
 
     verdict = evaluate(item("1", [ICON_LOT_SALES]), [])
@@ -578,22 +592,18 @@ def test_lottery_items_are_the_moat():
     assert verdict.sellable
 
 
-def test_badges_still_shown_for_items_we_do_not_sell():
-    """代行を出さない商品でも関門バッジは出し続ける.
-
-    「なぜ買えないか」を示すことはサイトの情報価値そのもので、
-    代行を売ることとは別。ここを一緒に消すとサイトが痩せる。
-    """
+def test_badges_shown_for_every_gated_item():
+    """関門バッジは全商品に出る。「なぜ買えないか」がサイトの情報価値."""
     from jpgate.gates import G2_JP_ADDRESS, SourceGate, badges_en, evaluate
 
     verdict = evaluate(item("1", []), [SourceGate(G2_JP_ADDRESS, "国内配送のみ", "2026-08-17")])
-    assert not verdict.sellable
     assert badges_en(verdict) == ["🚫 Japanese shipping address required"]
 
 
-def test_payment_gate_alone_is_not_a_moat():
-    """国内決済も転送業者が代理決済で解決している."""
+def test_payment_gate_is_sold_but_not_flagged_as_exclusive():
+    """国内決済は転送業者が代理決済で解決している＝競合がいる前提で値付けする."""
     from jpgate.gates import G3_JP_PAYMENT, SourceGate, evaluate
 
     verdict = evaluate(item("1", []), [SourceGate(G3_JP_PAYMENT, "国内カードのみ", "2026-08-17")])
-    assert not verdict.sellable
+    assert verdict.sellable
+    assert verdict.exclusive_keys == ()
