@@ -63,4 +63,4 @@ if ($LASTEXITCODE -ne 0) { Write-Error "コミットに失敗しました。"; e
 git push origin main
 if ($LASTEXITCODE -ne 0) { Write-Error "プッシュに失敗しました。"; exit 1 }
 
-Write-Host "反映しました: https://tknjnsk.github.io/jpgate/"
+Write-Host "反映しました: https://jpgate.net/"

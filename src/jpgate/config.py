@@ -49,7 +49,7 @@ class Config:
     #: 独自ドメイン。GitHub Pages 用の CNAME を書き出す。空なら書き出さない。
     custom_domain: str = ""
     #: 公開URL。og:image は絶対URLでないと無視されるので必須。
-    site_url: str = "https://tknjnsk.github.io/jpgate"
+    site_url: str = "https://jpgate.net"
     #: アクセス解析。どちらも Cookie を使わない（同意バナー不要）。
     #: 空なら何も出さない。「入れたつもり」を防ぐため readiness は
     #: 生成物にタグが在るかで判定している。
@@ -111,7 +111,7 @@ def load(path: Path | str | None = None) -> Config:
             ),
         ),
         custom_domain=str(raw.get("business", {}).get("custom_domain", "") or ""),
-        site_url=str(raw["business"].get("site_url") or "https://tknjnsk.github.io/jpgate"),
+        site_url=str(raw["business"].get("site_url") or "https://jpgate.net"),
         analytics_cf_token=os.environ.get(
             "JPGATE_CF_BEACON", str(raw.get("analytics", {}).get("cloudflare_token", "") or "")
         ),

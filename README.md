@@ -143,7 +143,8 @@ API が有料なので自動投稿しない。`site/x_queue.txt` に投稿文を
 
 ## 公開とアフィリエイト
 
-サイト: **https://tknjnsk.github.io/jpgate/** （GitHub Pages、`main` の `/docs`）
+サイト: **https://jpgate.net/** （GitHub Pages、`main` の `/docs`。独自ドメインは
+`business.custom_domain` から `docs/CNAME` を自動生成）
 
 更新は `powershell -ExecutionPolicy Bypass -File deploy.ps1`
 （scan → notify → publish → commit → push）。
@@ -177,6 +178,10 @@ Actions に任せてよいのは生成済み `docs/` の配信だけ。
 ### アフィリエイトIDの入れ方
 
 `JPGATE_EBAY_CAMPAIGN_ID` と `JPGATE_AMAZON_US_TAG`（`config.yaml` より優先）。
+
+**ドメインを移すときは `custom_domain` と `site_url` の両方を変えること。**
+`site_url` を忘れると og:image と canonical が旧URLのまま残り、リンク共有の
+カードが壊れる（絶対URLでないと og:image は無視されるため）。
 **空のあいだリンクは1本も生成されない。** 審査前にリンクを出すと規約違反になるため。
 
 順序に制約がある。**eBay Partner Network も Amazon アソシエイトも審査に実在する
