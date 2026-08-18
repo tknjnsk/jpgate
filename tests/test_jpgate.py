@@ -29,8 +29,12 @@ from jpgate.models import (
     ICON_RESERVE,
     ICON_RESERVE_END,
     ICON_SALE_END,
+    DISPLAY_STATUSES,
+    EVENT_NEW_LISTING,
+    OPEN_STATUSES,
     SHUT_STATUSES,
     STATUS_CLOSED,
+    STATUS_LISTED,
     STATUS_LOTTERY,
     STATUS_ON_SALE,
     STATUS_RESERVATION,
@@ -39,7 +43,7 @@ from jpgate.models import (
     CrawlResult,
     Item,
 )
-from jpgate.sources import pbandai
+from jpgate.sources import pbandai, pokecen
 from jpgate.store import Store
 from jpgate.translate import Glossary
 
@@ -366,3 +370,60 @@ def test_notify_marks_only_after_send(tmp_path):
     store.mark_notified([pending[0]["id"]])
     assert store.pending_events() == []
     store.close()
+
+
+# --------------------------------------------------------------------------
+# 在庫が観測できないソース（ポケモンセンター）
+# --------------------------------------------------------------------------
+def listed(item_id="p1") -> Item:
+    return Item(
+        source="pokemon-center",
+        shop="plush-toys/plush",
+        item_id=item_id,
+        title="ぬいぐるみ Pokémon fit モロバレル",
+        url=f"https://www.pokemoncenter-online.com/{item_id}.html",
+        price_jpy=1540,
+        image=None,
+        summary="",
+        icons=(),
+        ship_month=None,
+        status_hint=STATUS_LISTED,
+    )
+
+
+def test_listed_is_not_on_sale():
+    """在庫が観測できない商品を「売っている」と断定しない。"""
+    assert listed().status == STATUS_LISTED
+    assert STATUS_LISTED not in OPEN_STATUSES
+    assert STATUS_LISTED not in SHUT_STATUSES
+    # ただし実在する在庫なので公開ページには載せる。
+    assert STATUS_LISTED in DISPLAY_STATUSES
+
+
+def test_listed_first_sighting_emits_new_listing(tmp_path):
+    store = Store(tmp_path / "t.sqlite")
+    seed = CrawlResult("pokemon-center", "plush-toys/plush", True, [listed("p1")])
+    store.apply(seed)
+    events = store.apply(
+        CrawlResult("pokemon-center", "plush-toys/plush", True, [listed("p1"), listed("p2")])
+    )
+    assert [(e.item_id, e.kind) for e in events] == [("p2", EVENT_NEW_LISTING)]
+    store.close()
+
+
+def test_listed_never_produces_restock(tmp_path):
+    """LISTED を OPEN に入れると、売り切れ→掲載 が偽の再販として出る。
+    遷移が観測できないソースで再販を名乗ってはいけない。"""
+    store = Store(tmp_path / "t.sqlite")
+    store.apply(CrawlResult("pokemon-center", "plush-toys/plush", True, [listed("p1")]))
+    for _ in range(3):
+        events = store.apply(
+            CrawlResult("pokemon-center", "plush-toys/plush", True, [listed("p1")])
+        )
+        assert events == []
+    store.close()
+
+
+def test_pokecen_rejects_non_listing_page():
+    with pytest.raises(pokecen.ListingError):
+        pokecen.parse_listing("<html><body>404</body></html>", "plush-toys/plush", "u")

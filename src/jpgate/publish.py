@@ -26,6 +26,7 @@ from .models import (
     STATUS_CLOSED,
     STATUS_LOTTERY,
     STATUS_RESERVATION,
+    STATUS_LISTED,
     STATUS_SALE_END,
     STATUS_SOLD_OUT,
     Item,
@@ -38,6 +39,8 @@ _STATUS_LABEL = {
     STATUS_CLOSED: ("Closed", "shut"),
     STATUS_SALE_END: ("Ended", "shut"),
     STATUS_SOLD_OUT: ("Sold out", "shut"),
+    # 在庫が観測できないソース。「売っている」と言い切らない。
+    STATUS_LISTED: ("Listed", "listed"),
 }
 
 
@@ -53,6 +56,9 @@ def _row_to_item(row: sqlite3.Row) -> Item:
         summary=row["summary"] or "",
         icons=tuple(json.loads(row["icons"])),
         ship_month=row["ship_month"],
+        # DB に記録された状態が観測の正本。アイコンから導き直すと、
+        # アイコンを持たないソース(ポケセン)の LISTED が ON_SALE に化ける。
+        status_hint=row["status"],
     )
 
 
@@ -73,7 +79,7 @@ def render_site(
         verdict = evaluate(item, gates_by_source.get(row["source"], []))
         if verdict.sellable:
             gated += 1
-        cat_counts[classifier.classify(row["title"]).category] += 1
+        cat_counts[classifier.classify(row["title"], row["source"]).category] += 1
         by_month[row["ship_month"] or "TBA"].append((row, verdict))
 
     months = sorted(by_month, key=lambda m: (m == "TBA", m))
@@ -308,7 +314,7 @@ def _card(
         )
         extra = f'<p class="act aff">{anchors}<span class="ad">ad</span></p>'
 
-    verdict_line = (classifier or Classifier({})).classify(row["title"])
+    verdict_line = (classifier or Classifier({})).classify(row["title"], row["source"])
     # ライン名はカテゴリより具体的で、コレクターが実際に使う単位。
     # 絞り込みはカテゴリ、目視はラインという二段構えにしている。
     line_badge = (
@@ -343,7 +349,7 @@ def render_x_posts(
     classifier = classifier or Classifier({})
     buckets: dict[str, list[sqlite3.Row]] = defaultdict(list)
     for row in rows:
-        buckets[classifier.classify(row["title"]).category].append(row)
+        buckets[classifier.classify(row["title"], row["source"]).category].append(row)
 
     ordered: list[sqlite3.Row] = []
     while any(buckets.values()) and len(ordered) < limit * 3:
@@ -365,7 +371,7 @@ def render_x_posts(
         # タグは2つまで。多いとスパムに見えて逆効果になる。
         # ライン固有のタグ(#Gunpla 等)は英語圏で実際に検索・フォローされているが、
         # 汎用タグ(#anime #figure)はノイズなので出さない。
-        line = classifier.classify(row["title"])
+        line = classifier.classify(row["title"], row["source"])
         tags = " ".join(t for t in (line.hashtag, "#PBandai") if t)
         out.append(
             f"{_STATUS_LABEL.get(row['status'], ('On sale', ''))[0]}: {title} {price}\n"
@@ -465,6 +471,7 @@ text-transform:uppercase;padding:.15rem .45rem;border-radius:3px;color:#fff;
 margin-bottom:.4rem}
 .tag.lot{background:var(--lot)}.tag.pre{background:var(--pre)}.tag.on{background:var(--on)}
 .tag.shut{background:var(--mut)}
+.tag.listed{background:var(--pre);opacity:.75}
 .filters{display:flex;flex-wrap:wrap;gap:.5rem;margin:1.25rem 0 .5rem}
 .chip{font:inherit;font-size:.85rem;background:var(--card);color:var(--fg);
 border:1px solid var(--line);border-radius:999px;padding:.4rem .85rem;cursor:pointer;

@@ -24,12 +24,15 @@ from .lines import Classifier
 from .models import Item
 from .notify import build_embed, post
 from .publish import render_site, render_x_posts, write
-from .sources import pbandai
+from .sources import pbandai, pokecen
 from .store import Store
 from .translate import Glossary
 
 #: このソース名のときにどのクローラを使うか。
-_CRAWLERS = {"p-bandai": pbandai.crawl_shop}
+_CRAWLERS = {
+    "p-bandai": pbandai.crawl_shop,
+    "pokemon-center": pokecen.crawl_shop,
+}
 
 #: ゲート宣言の確認日がこれより古いと doctor が警告する。
 #: サイトのポリシーは黙って変わるので、宣言を放置しないための仕掛け。

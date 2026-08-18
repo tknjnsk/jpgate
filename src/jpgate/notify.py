@@ -16,7 +16,9 @@ from .config import Config
 from .gates import GATE_DEFS, GateVerdict, badges_en
 from .models import (
     ICON_LOT_SALES,
+    STATUS_LISTED,
     EVENT_DEADLINE,
+    EVENT_NEW_LISTING,
     EVENT_LOTTERY_OPEN,
     EVENT_RESERVATION_OPEN,
     EVENT_RESTOCK,
@@ -28,6 +30,7 @@ _HEADLINE = {
     EVENT_RESERVATION_OPEN: ("🆕 Pre-order now open", 0x3498DB),
     EVENT_RESTOCK: ("♻️ Back on sale", 0x2ECC71),
     EVENT_DEADLINE: ("⏳ Closing soon", 0xE74C3C),
+    EVENT_NEW_LISTING: ("🆕 Just listed", 0x9B59B6),
 }
 
 
@@ -55,11 +58,15 @@ def build_embed(
         # 抽選と通常販売で提供する行為が違う。予約商品に "enter"(抽選に応募する)
         # と書くのは単に誤り。関門の種類に合わせて動詞を変える。
         lottery = ICON_LOT_SALES in tuple(json.loads(row["icons"]))
-        offer = (
-            "can enter the lottery for you"
-            if lottery
-            else "can order it and forward it to you"
-        )
+        if lottery:
+            offer = "can enter the lottery for you"
+        elif row["to_status"] == STATUS_LISTED:
+            # 在庫が観測できないソース。「注文できる」と言い切ると、
+            # 売り切れていたときにこちらが嘘をついたことになる。
+            offer = "can check stock and order it for you"
+        else:
+            offer = "can order it and forward it to you"
+
         lines.append(f"**We are in Japan and {offer} → {cfg.contact_url}**")
     else:
         lines.append("")

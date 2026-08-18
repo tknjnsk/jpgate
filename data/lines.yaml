@@ -68,6 +68,18 @@ Digimon:
     Vital Bracelet: ["ヴァイタルブレス", "デジヴァイス"]
     Digimon: ["デジモン"]
 
+Pokemon:
+  hashtag: "#PokemonCenter"
+  # ポケモンセンターオンラインの商品は定義上すべてポケモンなので、
+  # 商品名がどのパターンにも当たらなくてもこのカテゴリに入れる。
+  # 商品名だけで判定すると「ハンカチ」「タンブラー」等が Other に落ちる。
+  sources: ["pokemon-center"]
+  lines:
+    "Pokémon Card Game": ["ポケモンカード", "拡張パック", "スターターセット", "強化拡張パック"]
+    "Pokémon fit": ["Pokémon fit", "ポケモンフィット"]
+    Plush: ["ぬいぐるみ", "マスコット"]
+    "Pokémon Goods": ["ポケモン", "ピカチュウ", "イーブイ"]
+
 Goods:
   hashtag: "#PremiumBandai"
   lines:

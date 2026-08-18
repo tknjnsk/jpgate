@@ -43,8 +43,12 @@ class Classifier:
         # カテゴリごとに探すと、カテゴリをまたいだ長さ優先が効かない。
         flat: list[tuple[str, str, str]] = []
         self._hashtags: dict[str, str] = {}
+        #: ソース名 -> 既定カテゴリ。専門店は商品名に依らず所属が確定する。
+        self._by_source: dict[str, str] = {}
         for category, body in raw.items():
             self._hashtags[category] = body.get("hashtag", "")
+            for src in body.get("sources") or []:
+                self._by_source[src] = category
             for line, patterns in (body.get("lines") or {}).items():
                 for pattern in patterns:
                     flat.append((pattern, category, line))
@@ -61,9 +65,20 @@ class Classifier:
     def categories(self) -> list[str]:
         return list(self._hashtags)
 
-    def classify(self, title: str) -> Verdict:
+    def classify(self, title: str, source: str | None = None) -> Verdict:
+        """商品名から分類する。
+
+        当たらなかったときは、**そのソースが専門店なら所属を確定できる**。
+        ポケモンセンターの「ハンカチ」は商品名にポケモン語が無くても
+        ポケモン商品であって Other ではない。
+        """
         norm = unicodedata.normalize("NFKC", title).lower()
         for pattern, category, line in self._patterns:
             if unicodedata.normalize("NFKC", pattern).lower() in norm:
                 return Verdict(category, line, self._hashtags.get(category) or None)
+
+        fallback = self._by_source.get(source or "")
+        if fallback:
+            # ライン名は付けない。カテゴリは確定するが、どのラインかは不明。
+            return Verdict(fallback, None, self._hashtags.get(fallback) or None)
         return Verdict(OTHER, None, None)

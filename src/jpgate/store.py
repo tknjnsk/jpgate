@@ -21,12 +21,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .models import (
+    DISPLAY_STATUSES,
     EVENT_DEADLINE,
     EVENT_LOTTERY_OPEN,
     EVENT_RESERVATION_OPEN,
+    EVENT_NEW_LISTING,
     EVENT_RESTOCK,
     OPEN_STATUSES,
     SHUT_STATUSES,
+    STATUS_LISTED,
     STATUS_LOTTERY,
     STATUS_RESERVATION,
     CrawlResult,
@@ -219,11 +222,11 @@ class Store:
 
     def open_items(self) -> list[sqlite3.Row]:
         """Web ページ用。今なら申し込める／買えるもの。"""
-        marks = ",".join("?" for _ in OPEN_STATUSES)
+        marks = ",".join("?" for _ in DISPLAY_STATUSES)
         return self.db.execute(
             f"SELECT * FROM items WHERE status IN ({marks}) "
             "ORDER BY (ship_month IS NULL), ship_month, last_seen DESC",
-            tuple(sorted(OPEN_STATUSES)),
+            tuple(sorted(DISPLAY_STATUSES)),
         ).fetchall()
 
     def recently_closed(self, limit: int = 60) -> list[sqlite3.Row]:
@@ -273,7 +276,10 @@ def _events_for(item: Item, prev_status: str | None, prev_deadline: bool) -> lis
         )
 
     if prev_status is None:
-        if now == STATUS_LOTTERY:
+        if now == STATUS_LISTED:
+            # 在庫状態が観測できないソース。初見＝掲載が現れた、しか言えない。
+            add(EVENT_NEW_LISTING)
+        elif now == STATUS_LOTTERY:
             add(EVENT_LOTTERY_OPEN)
         elif now == STATUS_RESERVATION:
             add(EVENT_RESERVATION_OPEN)

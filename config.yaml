@@ -88,6 +88,51 @@ sources:
         label: "Carddass"
         max_pages: 3
 
+  # --------------------------------------------------------------------------
+  # ポケモンセンターオンライン
+  #
+  # robots.txt は全面許可。**正直なUAで200が返る**ので騙らない。
+  # カテゴリURLがそのまま一覧になり、一覧は sitemap_0.xml に98件ある。
+  #
+  # **在庫状態が一覧から取れない**（tagList は常に空で、在庫フラグは商品ページ
+  # にしか無い）。よって全品 LISTED = 在庫不明 で登録し、検知できるのは
+  # 「掲載が新しく現れた」= 新商品/発売開始 だけ。再販・売り切れは観測できない。
+  # shop はサイトマップに実在するカテゴリパスのみを書くこと（推測で書くと404）。
+  # --------------------------------------------------------------------------
+  - name: pokemon-center
+
+    gates:
+      - key: G2_JP_ADDRESS
+        evidence: >-
+          ポケモンセンターオンラインは日本国内の住所にのみ配送する。
+          海外発送の選択肢が決済画面に存在せず、海外向けの公式窓口は
+          Pokémon Center US など別サイトで品揃えが異なる。
+        verified_on: 2026-08-18
+
+    per_page: 48
+    delay_sec: 1.5
+    timeout: 60
+
+    shops:
+      - shop: plush-toys/plush
+        label: "Plush"
+        max_pages: 3
+      - shop: plush-toys/figures
+        label: "Figures"
+        max_pages: 2
+      - shop: pokemon-card-game/booster-packs
+        label: "TCG Booster Packs"
+        max_pages: 2
+      - shop: pokemon-card-game/tcg-expansions
+        label: "TCG Expansions"
+        max_pages: 2
+      - shop: zakka/keychains-pins
+        label: "Keychains & Pins"
+        max_pages: 2
+      - shop: season-feature/pickup
+        label: "Seasonal Pickup"
+        max_pages: 2
+
 notify:
   # 1回の実行でDiscordに投げる上限。誤検知が爆発したときの被害を切る。
   max_per_run: 20

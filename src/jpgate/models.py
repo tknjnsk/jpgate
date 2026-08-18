@@ -53,11 +53,21 @@ STATUS_ON_SALE = "ON_SALE"  # 状態アイコンが無い＝通常販売中
 STATUS_CLOSED = "CLOSED"  # 予約終了
 STATUS_SALE_END = "SALE_END"  # 販売終了
 STATUS_SOLD_OUT = "SOLD_OUT"  # 在庫無し
+#: 掲載は確認できたが、在庫状態が**観測できない**ソース向け。
+#: ポケモンセンターオンラインは一覧に在庫タグが一切出ず、在庫フラグは
+#: 商品ページにしか無い（数千点を毎時叩けない）。
+#: 「売っている」と断定できないので ON_SALE と混ぜない。
+#: この状態の商品には再販通知を出さない（そもそも遷移が観測できない）。
+STATUS_LISTED = "LISTED"
 
 #: 「今なら買える／申し込める」状態。再販判定はこの集合への遷移で見る。
+#: STATUS_LISTED は**入れない**。買えると断定できないものを
+#: 「再び買えるようになった」の到達先にすると嘘の再販通知が出る。
 OPEN_STATUSES = frozenset({STATUS_LOTTERY, STATUS_RESERVATION, STATUS_ON_SALE})
 #: 「もう買えない」状態。
 SHUT_STATUSES = frozenset({STATUS_CLOSED, STATUS_SALE_END, STATUS_SOLD_OUT})
+#: 公開ページに載せる状態。LISTED は在庫が不明なだけで実在する在庫なので載せる。
+DISPLAY_STATUSES = OPEN_STATUSES | {STATUS_LISTED}
 
 
 @dataclass(frozen=True)
@@ -74,6 +84,9 @@ class Item:
     summary: str
     icons: tuple[str, ...]  # 正規化済みアイコンキー
     ship_month: str | None  # "2026-11"（RESERVE_YYYYMM 由来）
+    #: 状態をアイコンから導けないソースが明示的に入れる。
+    #: アイコン方式のソース（p-bandai）は None のままにすること。
+    status_hint: str | None = None
 
     @property
     def status(self) -> str:
@@ -87,6 +100,8 @@ class Item:
         終了時に抽選アイコンが外れて予約終了アイコンに置き換わる。
         頻度は低いが、起きたときの結果が誤通知なのでガードは外さない。
         """
+        if self.status_hint is not None:
+            return self.status_hint
         if ICON_RESERVE_END in self.icons:
             return STATUS_CLOSED
         if ICON_SALE_END in self.icons:
@@ -138,6 +153,7 @@ EVENT_LOTTERY_OPEN = "LOTTERY_OPEN"  # 抽選受付が始まった
 EVENT_RESERVATION_OPEN = "RESERVATION_OPEN"  # 予約が始まった
 EVENT_RESTOCK = "RESTOCK"  # 終了/在庫無し → 再び買える
 EVENT_DEADLINE = "DEADLINE"  # 締切間近が付いた
+EVENT_NEW_LISTING = "NEW_LISTING"  # 在庫状態は不明だが、掲載が新しく現れた
 
 #: 通知する種別。CLOSED への遷移は通知しない（客に価値が無いうえ、
 #: 走査漏れと区別できないため）。
@@ -146,4 +162,5 @@ NOTIFIABLE = (
     EVENT_RESERVATION_OPEN,
     EVENT_RESTOCK,
     EVENT_DEADLINE,
+    EVENT_NEW_LISTING,
 )
