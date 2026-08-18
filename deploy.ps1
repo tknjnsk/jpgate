@@ -39,6 +39,17 @@ if ($NoNotify) {
     if ($LASTEXITCODE -ne 0) { Write-Warning "通知に失敗しました。" }
 }
 
+# --- X 下書きを自分用チャンネルへ -------------------------------------------
+# 未設定なら何もしない。#drops とは**別の** webhook を要求している
+# (下書きをメンバーに流すと同じ商品の告知が2回届く)。
+# 商品ごとに一度しか送らないので、毎時回しても新着分しか飛ばない。
+if (-not $env:JPGATE_X_QUEUE_WEBHOOK) {
+    Write-Host "JPGATE_X_QUEUE_WEBHOOK が未設定のため X 下書きは送りません。"
+} else {
+    python -m jpgate xqueue --no-dry-run
+    if ($LASTEXITCODE -ne 0) { Write-Warning "X 下書きの送信に失敗しました。" }
+}
+
 # --- ページ生成 -------------------------------------------------------------
 # 掲載0件のときは publish 自身が書き換えを拒否して 1 を返す。
 # その状態で git add に進むと「空のサイト」を公開しかねないので、ここで止める。

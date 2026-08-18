@@ -4,8 +4,9 @@
     jpgate scan      走査してイベントをDBに貯める
     jpgate notify    未通知イベントを Discord に流す
     jpgate publish   docs/index.html と data/x_queue.txt を作り直す
+    jpgate xqueue    未送信の X 下書きを Discord へ（既定は dry-run）
     jpgate readiness アフィリエイト審査に出せる状態か判定する
-    jpgate run       scan → notify → publish（定期実行用）
+    jpgate run       scan → notify → publish → xqueue（定期実行用）
 """
 
 from __future__ import annotations
@@ -22,8 +23,8 @@ from .config import Config
 from .gates import evaluate
 from .lines import Classifier
 from .models import Item
-from .notify import build_embed, post
-from .publish import render_site, render_x_posts, write
+from .notify import build_embed, post, post_text
+from .publish import build_x_posts, render_site, render_x_posts, write
 from .sources import pbandai, pokecen
 from .store import Store
 from .translate import Glossary
@@ -262,10 +263,64 @@ def cmd_readiness(cfg: Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_xqueue(cfg: Config, args: argparse.Namespace) -> int:
+    """まだ送っていない X 下書きを Discord へ流す（コピペ用）。
+
+    掲載中の商品は毎時の走査で何度でも出てくるので、**商品ごとに一度だけ**
+    送る。既読は DB に持つ（x_posts_sent）。
+    """
+    store = Store(cfg.db_path)
+    glossary = Glossary.load(cfg.glossary_path)
+    gates = _gates_by_source(cfg)
+    try:
+        rows = store.open_items()
+        if not rows:
+            # publish と同じ理由。走査が壊れているときに「何も無い」と
+            # 振る舞うと、静かに止まったことに気づけない。
+            print("! 掲載できる商品が0件。走査が壊れている可能性があります")
+            return 1
+
+        posts = build_x_posts(
+            rows,
+            gates,
+            glossary,
+            cfg,
+            limit=cfg.max_x_posts_per_run,
+            classifier=Classifier.load(cfg.lines_path),
+            exclude=store.x_sent_keys(),
+        )
+        if not posts:
+            print("未送信の下書きなし")
+            return 0
+
+        if args.dry_run:
+            for p in posts:
+                print("---")
+                print(p.text)
+            print(f"\n(dry-run: {len(posts)} 件。送信も既読化もしていません)")
+            return 0
+
+        if not cfg.x_queue_webhook:
+            print(
+                "! JPGATE_X_QUEUE_WEBHOOK が未設定。送信できません\n"
+                "  #drops とは別のチャンネルの webhook を設定してください"
+            )
+            return 1
+
+        post_text(cfg.x_queue_webhook, [p.text for p in posts])
+        # 送信が成功してから既読にする。逆にすると落ちたときに黙って消える。
+        store.mark_x_sent([p.key for p in posts])
+        print(f"{len(posts)} 件を Discord へ送信しました")
+    finally:
+        store.close()
+    return 0
+
+
 def cmd_run(cfg: Config, args: argparse.Namespace) -> int:
     rc = cmd_scan(cfg, args)
     cmd_notify(cfg, args)
     cmd_publish(cfg, args)
+    cmd_xqueue(cfg, args)
     return rc
 
 
@@ -293,6 +348,7 @@ def main(argv: list[str] | None = None) -> int:
         ("scan", cmd_scan),
         ("notify", cmd_notify),
         ("publish", cmd_publish),
+        ("xqueue", cmd_xqueue),
         ("readiness", cmd_readiness),
         ("run", cmd_run),
     ):

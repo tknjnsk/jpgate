@@ -64,9 +64,23 @@ class Config:
     #: 訳出率がこれ未満なら「原題のまま」注記を付ける。
     min_translation_coverage: float = 0.5
 
+    #: 1回に Discord へ送る X 下書きの上限。初回は掲載中の商品が丸ごと
+    #: 対象になるので、これが無いと初回だけ大量に飛ぶ。
+    max_x_posts_per_run: int = 3
+
     @property
     def discord_webhook(self) -> str | None:
         return os.environ.get("JPGATE_DISCORD_WEBHOOK")
+
+    @property
+    def x_queue_webhook(self) -> str | None:
+        """X 下書きの送り先。**`#drops` とは別のチャンネルにすること**.
+
+        下書きは自分専用の作業用メモで、メンバーに見せるものではない
+        (同じ商品の告知が2回流れることになる)。別 webhook を要求することで
+        取り違えを構造的に防ぐ。未設定なら送信そのものを行わない。
+        """
+        return os.environ.get("JPGATE_X_QUEUE_WEBHOOK")
 
 
 #: Cloudflare のビーコントークンは16進の文字列。ドキュメントの例

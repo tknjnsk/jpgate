@@ -456,3 +456,94 @@ def test_source_hashtag_never_names_the_wrong_seller():
     assert _SOURCE_HASHTAG.get("未知のソース", "") == ""
     # 同じタグを2つのソースに割り当てない(販売元の識別にならなくなる)。
     assert len(set(_SOURCE_HASHTAG.values())) == len(_SOURCE_HASHTAG)
+
+
+# --------------------------------------------------------------------------
+# X 下書きの Discord 配信（コピペ用）
+# --------------------------------------------------------------------------
+def test_x_draft_is_never_sent_twice_for_the_same_item(tmp_path):
+    """掲載中の商品は毎時の走査で何度でも出てくる.
+
+    既読管理が無いと同じ文面が1時間ごとに飛び、真っ先にミュートされる。
+    商品ごとに一度だけであることを固定する。
+    """
+    from jpgate import config as cm
+    from jpgate.publish import build_x_posts
+
+    store = Store(tmp_path / "t.sqlite")
+    store.apply(crawl(item("1", [ICON_LOT_SALES]), item("2", [ICON_LOT_SALES])))
+    cfg = cm.load()
+
+    rows = store.open_items()
+    first = build_x_posts(rows, {}, Glossary({}), cfg, exclude=store.x_sent_keys())
+    assert len(first) == 2
+
+    store.mark_x_sent([p.key for p in first])
+    # 商品は掲載され続けているが、二度目は何も出ない。
+    again = build_x_posts(rows, {}, Glossary({}), cfg, exclude=store.x_sent_keys())
+    assert again == []
+    store.close()
+
+
+def test_x_draft_exclusion_happens_before_the_limit(tmp_path):
+    """送信済みは**選抜の前に**落とす.
+
+    後で落とすと、送信済みが枠を食った分だけ新しい商品が出てこなくなり、
+    送るほどキューが痩せる。limit=1 で送信済みを1件持たせると露見する。
+    """
+    from jpgate import config as cm
+    from jpgate.publish import build_x_posts
+
+    store = Store(tmp_path / "t.sqlite")
+    store.apply(crawl(item("1", [ICON_LOT_SALES]), item("2", [ICON_LOT_SALES])))
+    cfg = cm.load()
+    rows = store.open_items()
+
+    store.mark_x_sent([("p-bandai", "1")])
+    got = build_x_posts(
+        rows, {}, Glossary({}), cfg, limit=1, exclude=store.x_sent_keys()
+    )
+    assert [p.item_id for p in got] == ["2"]
+    store.close()
+
+
+def test_x_queue_file_still_shows_everything(tmp_path):
+    """ファイルは「いまのキュー全体」. 送信済みで痩せさせない.
+
+    Discord 配信とファイルは別の軸。ここを共有すると、手元のファイルを見て
+    貼る従来のやり方が黙って壊れる。
+    """
+    from jpgate import config as cm
+    from jpgate.publish import render_x_posts
+
+    store = Store(tmp_path / "t.sqlite")
+    store.apply(crawl(item("1", [ICON_LOT_SALES]), item("2", [ICON_LOT_SALES])))
+    cfg = cm.load()
+    store.mark_x_sent([("p-bandai", "1"), ("p-bandai", "2")])
+
+    text = render_x_posts(store.open_items(), {}, Glossary({}), cfg)
+    assert text.count("Japan only") == 2
+    store.close()
+
+
+def test_x_draft_webhook_is_separate_from_the_drops_webhook(monkeypatch):
+    """下書きは自分用。#drops に流すとメンバーに同じ商品が2回届く.
+
+    別の環境変数を要求することで取り違えを構造的に防ぐ。未設定なら
+    None のままで、呼び出し側が送信を諦められる。
+    """
+    from jpgate import config as cm
+
+    monkeypatch.setenv("JPGATE_DISCORD_WEBHOOK", "https://example.invalid/drops")
+    monkeypatch.delenv("JPGATE_X_QUEUE_WEBHOOK", raising=False)
+    cfg = cm.load()
+    assert cfg.discord_webhook == "https://example.invalid/drops"
+    assert cfg.x_queue_webhook is None
+
+
+def test_x_draft_too_long_for_discord_is_not_truncated():
+    """切れた文面を貼られるのが最悪なので、送らずに落とす."""
+    from jpgate.notify import post_text
+
+    with pytest.raises(ValueError):
+        post_text("https://example.invalid/hook", ["x" * 2100])

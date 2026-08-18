@@ -79,6 +79,19 @@ CREATE TABLE IF NOT EXISTS events (
     notified_at  TEXT
 );
 
+-- X の投稿下書きを Discord に送った記録。
+--
+-- 掲載中の商品は毎時の走査で何度でも出てくるので、これが無いと同じ文面が
+-- 1時間ごとに飛び、真っ先にミュートされる。**商品ごとに一度だけ**送る。
+-- events と分けているのは、通知が「状態が変わった瞬間」なのに対して
+-- こちらは「まだ貼っていない商品」という別の軸だから。
+CREATE TABLE IF NOT EXISTS x_posts_sent (
+    source   TEXT NOT NULL,
+    item_id  TEXT NOT NULL,
+    sent_at  TEXT NOT NULL,
+    PRIMARY KEY (source, item_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_events_pending ON events (notified_at, at);
 CREATE INDEX IF NOT EXISTS idx_items_status ON items (status, ship_month);
 """
@@ -217,6 +230,27 @@ class Store:
         at = _now()
         self.db.executemany(
             "UPDATE events SET notified_at=? WHERE id=?", [(at, i) for i in event_ids]
+        )
+        self.db.commit()
+
+    def x_sent_keys(self) -> set[tuple[str, str]]:
+        """既に X の下書きを送った商品の (source, item_id)。"""
+        return {
+            (r["source"], r["item_id"])
+            for r in self.db.execute("SELECT source, item_id FROM x_posts_sent")
+        }
+
+    def mark_x_sent(self, keys: list[tuple[str, str]]) -> None:
+        """送信済みにする. **送信が成功してから呼ぶこと**.
+
+        先に記録すると、Discord が落ちたときにその商品が二度と出てこなくなる。
+        逆順(送ってから記録)なら最悪もう一度届くだけで、失うものが無い。
+        """
+        at = _now()
+        self.db.executemany(
+            "INSERT OR IGNORE INTO x_posts_sent (source, item_id, sent_at) "
+            "VALUES (?, ?, ?)",
+            [(s, i, at) for s, i in keys],
         )
         self.db.commit()
 

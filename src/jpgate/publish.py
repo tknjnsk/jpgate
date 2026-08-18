@@ -14,6 +14,7 @@ import html
 import json
 import sqlite3
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -344,23 +345,48 @@ def _card(
     )
 
 
-def render_x_posts(
+@dataclass(frozen=True)
+class XPost:
+    """X に貼る下書き1件.
+
+    商品を特定できる形で持つ。連結済みの文字列だけだと「どれを既に送ったか」
+    が言えず、Discord へ毎時同じ文面を撒くことになる。
+    """
+
+    source: str
+    item_id: str
+    text: str
+
+    @property
+    def key(self) -> tuple[str, str]:
+        return (self.source, self.item_id)
+
+
+def build_x_posts(
     rows: list[sqlite3.Row],
     gates_by_source: dict[str, list[SourceGate]],
     glossary: Glossary,
     cfg: Config,
     limit: int = 10,
     classifier: Classifier | None = None,
-) -> str:
-    """X に手で貼る投稿文。ゲートが確定しているものだけ。
+    exclude: set[tuple[str, str]] | None = None,
+) -> list[XPost]:
+    """X に手で貼る投稿文を1件ずつ作る。ゲートが確定しているものだけ。
 
     **カテゴリを持ち回りで拾う。** 素直に上から10件取ると全部が同じ
     カテゴリになり（実際に10件すべて Trading Cards になった）、順に貼ると
     アカウントがBotに見える。1カテゴリ連投は最も安いフォロー解除の理由。
+
+    `exclude` に (source, item_id) を渡すと**選抜の前に**落とす。後で落とすと
+    枠を使い切った分だけ新しい商品が出てこなくなり、送信済みが増えるほど
+    キューが痩せていく。
     """
     classifier = classifier or Classifier({})
+    skip = exclude or set()
     buckets: dict[str, list[sqlite3.Row]] = defaultdict(list)
     for row in rows:
+        if (row["source"], row["item_id"]) in skip:
+            continue
         buckets[classifier.classify(row["title"], row["source"]).category].append(row)
 
     ordered: list[sqlite3.Row] = []
@@ -369,7 +395,7 @@ def render_x_posts(
             if buckets[cat]:
                 ordered.append(buckets[cat].pop(0))
 
-    out: list[str] = []
+    out: list[XPost] = []
     for row in ordered:
         if len(out) >= limit:
             break
@@ -397,11 +423,35 @@ def render_x_posts(
             )
         )
         out.append(
-            f"{_STATUS_LABEL.get(row['status'], ('On sale', ''))[0]}: {title} {price}\n"
-            f"Japan only — needs a {gate}.\n{row['url']}\n"
-            f"We're in Japan: {cfg.contact_url}\n{tags}"
+            XPost(
+                source=row["source"],
+                item_id=row["item_id"],
+                text=(
+                    f"{_STATUS_LABEL.get(row['status'], ('On sale', ''))[0]}:"
+                    f" {title} {price}\n"
+                    f"Japan only — needs a {gate}.\n{row['url']}\n"
+                    f"We're in Japan: {cfg.contact_url}\n{tags}"
+                ),
+            )
         )
-    return ("\n\n" + "-" * 60 + "\n\n").join(out)
+    return out
+
+
+def render_x_posts(
+    rows: list[sqlite3.Row],
+    gates_by_source: dict[str, list[SourceGate]],
+    glossary: Glossary,
+    cfg: Config,
+    limit: int = 10,
+    classifier: Classifier | None = None,
+) -> str:
+    """data/x_queue.txt の中身。**送信済みかどうかは見ない**.
+
+    ファイルは「いまのキュー全体」を映すもので、Discord への配信とは別の軸。
+    ここで送信済みを外すと、手元のファイルを見て貼る従来のやり方が壊れる。
+    """
+    posts = build_x_posts(rows, gates_by_source, glossary, cfg, limit, classifier)
+    return ("\n\n" + "-" * 60 + "\n\n").join(p.text for p in posts)
 
 
 def write(cfg: Config, site_html: str, x_posts: str) -> tuple[Path, Path]:

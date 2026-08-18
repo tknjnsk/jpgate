@@ -106,6 +106,44 @@ def build_embed(
 _UA = "JPGate/0.1 (+https://github.com/tknjnsk/jpgate)"
 
 
+#: Discord の1メッセージあたりの content 上限。
+_CONTENT_LIMIT = 2000
+
+
+def _send(webhook: str, payload: dict, timeout: int) -> None:
+    req = urllib.request.Request(
+        webhook,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json", "User-Agent": _UA},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        if resp.status >= 300:
+            raise urllib.error.HTTPError(
+                webhook, resp.status, "discord rejected", resp.headers, None
+            )
+
+
+def post_text(webhook: str, contents: list[str], timeout: int = 30) -> None:
+    """素のテキストを1件1メッセージで投げる.
+
+    embed ではなくコードブロックにするのは**コピペのため**。embed の本文は
+    Discord のUIから選択しづらく、装飾記号も一緒に拾ってしまう。
+    コードブロックならモバイルでもコピーボタンが出る。
+
+    投稿文にバッククォートは入らない設計だが、将来商品名に混ざるとコード
+    ブロックが割れて残りが Markdown として解釈される。閉じ記号と衝突する
+    3連バッククォートだけ潰しておく。
+    """
+    for content in contents:
+        body = f"```\n{content.replace('```', '` ` `')}\n```"
+        if len(body) > _CONTENT_LIMIT:
+            # X の投稿は280字なので通常あり得ない。起きたら黙って切るより
+            # 送らないほうがよい(切れた文面を貼られるのが最悪)。
+            raise ValueError(f"Discord の2000字上限を超える下書き: {len(body)}字")
+        _send(webhook, {"content": body}, timeout)
+
+
 def post(webhook: str, embeds: list[dict], timeout: int = 30) -> None:
     """Discord へ投げる。embed は1リクエスト10件が上限。"""
     for i in range(0, len(embeds), 10):
