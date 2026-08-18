@@ -427,3 +427,15 @@ def test_listed_never_produces_restock(tmp_path):
 def test_pokecen_rejects_non_listing_page():
     with pytest.raises(pokecen.ListingError):
         pokecen.parse_listing("<html><body>404</body></html>", "plush-toys/plush", "u")
+
+
+def test_placeholder_analytics_token_is_rejected():
+    """ドキュメントの `$SITE_TOKEN` をそのまま貼る取り違えは実際に起きる。
+    受け入れると「解析を入れたつもり」になり、readiness も OK に化ける。"""
+    from jpgate.config import _clean_cf_token
+
+    assert _clean_cf_token("$SITE_TOKEN") == ""
+    assert _clean_cf_token("") == ""
+    assert _clean_cf_token("token") == ""
+    good = "a1b2c3d4e5f60718293a4b5c6d7e8f90"
+    assert _clean_cf_token(f"  {good}  ") == good

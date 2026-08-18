@@ -248,8 +248,12 @@ def _analytics(cfg: Config) -> str:
     Cookie を使わない選択肢に限っている（同意バナーが要らない）。
     """
     if cfg.analytics_cf_token:
+        # 形式は Cloudflare の現行ドキュメントに合わせている（type="module"）。
+        # 旧来の defer 版でも動くが、公式が配る形から外れると
+        # 仕様変更のときに黙って計測が止まる。
         return (
-            '<script defer src="https://static.cloudflareinsights.com/beacon.min.js" '
+            '<script type="module" '
+            'src="https://static.cloudflareinsights.com/beacon.min.js" '
             f"data-cf-beacon='{{\"token\": \"{cfg.analytics_cf_token}\"}}'></script>"
         )
     if cfg.analytics_goatcounter:

@@ -12,6 +12,8 @@ from pathlib import Path
 
 import yaml
 
+import re
+
 from .affiliate import AffiliateConfig
 from .gates import SourceGate
 
@@ -67,6 +69,17 @@ class Config:
         return os.environ.get("JPGATE_DISCORD_WEBHOOK")
 
 
+#: Cloudflare のビーコントークンは16進の文字列。ドキュメントの例
+#: `$SITE_TOKEN` をそのまま貼ると「解析を入れたつもり」になるので弾く。
+#: 空として扱えば、タグは出ず readiness も UNKNOWN のままになる＝気づける。
+_RE_CF_TOKEN = re.compile(r"^[0-9a-f]{20,}$", re.I)
+
+
+def _clean_cf_token(raw: str) -> str:
+    raw = (raw or "").strip()
+    return raw if _RE_CF_TOKEN.match(raw) else ""
+
+
 def load(path: Path | str | None = None) -> Config:
     path = Path(path) if path else ROOT / "config.yaml"
     raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
@@ -112,8 +125,11 @@ def load(path: Path | str | None = None) -> Config:
         ),
         custom_domain=str(raw.get("business", {}).get("custom_domain", "") or ""),
         site_url=str(raw["business"].get("site_url") or "https://jpgate.net"),
-        analytics_cf_token=os.environ.get(
-            "JPGATE_CF_BEACON", str(raw.get("analytics", {}).get("cloudflare_token", "") or "")
+        analytics_cf_token=_clean_cf_token(
+            os.environ.get(
+                "JPGATE_CF_BEACON",
+                str(raw.get("analytics", {}).get("cloudflare_token", "") or ""),
+            )
         ),
         analytics_goatcounter=str(raw.get("analytics", {}).get("goatcounter_code", "") or ""),
         closed_limit=out.get("closed_limit", 60),
