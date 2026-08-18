@@ -43,6 +43,14 @@ _STATUS_LABEL = {
     STATUS_LISTED: ("Listed", "listed"),
 }
 
+# 販売元 → X のハッシュタグ。**知らないソースには付けない**。
+# ソースを増やしたときにここへ足し忘れると、タグが1つになるだけで
+# 誤ったタグは出ない(黙って間違った販売元を名乗るより良い)。
+_SOURCE_HASHTAG = {
+    "p-bandai": "#PBandai",
+    "pokemon-center": "#PokemonCenter",
+}
+
 
 def _row_to_item(row: sqlite3.Row) -> Item:
     return Item(
@@ -376,7 +384,18 @@ def render_x_posts(
         # ライン固有のタグ(#Gunpla 等)は英語圏で実際に検索・フォローされているが、
         # 汎用タグ(#anime #figure)はノイズなので出さない。
         line = classifier.classify(row["title"], row["source"])
-        tags = " ".join(t for t in (line.hashtag, "#PBandai") if t)
+        # 2つ目は**販売元のタグ**。ここを "#PBandai" 固定にしていたため、
+        # ポケモンセンターの商品にまで #PBandai が付いていた(実際にキューに出た)。
+        # 海外コレクターは販売元でフォローするので、間違えると一番効く層に
+        # 「調べていないアカウント」だと判断される。
+        # 知らない販売元にはタグを付けない(推測で作らない)。
+        # ラインのタグと販売元のタグは一致しうる(ポケセンの商品はラインも
+        # #PokemonCenter になる)。同じタグを2回出すと明確にBotに見えるので畳む。
+        tags = " ".join(
+            dict.fromkeys(
+                t for t in (line.hashtag, _SOURCE_HASHTAG.get(row["source"], "")) if t
+            )
+        )
         out.append(
             f"{_STATUS_LABEL.get(row['status'], ('On sale', ''))[0]}: {title} {price}\n"
             f"Japan only — needs a {gate}.\n{row['url']}\n"

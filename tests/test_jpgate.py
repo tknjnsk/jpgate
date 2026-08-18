@@ -439,3 +439,20 @@ def test_placeholder_analytics_token_is_rejected():
     assert _clean_cf_token("token") == ""
     good = "a1b2c3d4e5f60718293a4b5c6d7e8f90"
     assert _clean_cf_token(f"  {good}  ") == good
+
+
+def test_source_hashtag_never_names_the_wrong_seller():
+    """販売元タグは**ソースから引く**。固定文字列にしない.
+
+    実際に `#PBandai` が固定で付いていたため、ポケモンセンターの商品にまで
+    #PBandai が付いた投稿がキューに出ていた。海外コレクターは販売元で
+    フォローするので、ここを間違えると最も効く層に「調べていない」と伝わる。
+    知らないソースはタグ**無し**が正しい(推測で販売元を名乗らない)。
+    """
+    from jpgate.publish import _SOURCE_HASHTAG
+
+    assert _SOURCE_HASHTAG["p-bandai"] == "#PBandai"
+    assert _SOURCE_HASHTAG["pokemon-center"] == "#PokemonCenter"
+    assert _SOURCE_HASHTAG.get("未知のソース", "") == ""
+    # 同じタグを2つのソースに割り当てない(販売元の識別にならなくなる)。
+    assert len(set(_SOURCE_HASHTAG.values())) == len(_SOURCE_HASHTAG)

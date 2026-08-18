@@ -7,3 +7,6 @@ __pycache__/
 .pytest_cache/
 data/x_queue.txt
 .omc/
+
+# 内部用の文面集。リポジトリは公開なので追跡しない。
+SOCIAL_COPY.md
