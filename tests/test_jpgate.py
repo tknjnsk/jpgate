@@ -607,3 +607,42 @@ def test_payment_gate_is_sold_but_not_flagged_as_exclusive():
     verdict = evaluate(item("1", []), [SourceGate(G3_JP_PAYMENT, "国内カードのみ", "2026-08-17")])
     assert verdict.sellable
     assert verdict.exclusive_keys == ()
+
+
+def test_venue_pickup_items_are_not_offered():
+    """会場受取は当てても送れない. 通常商品として見積もらない.
+
+    関門としては最強(海外の人は日本の会場に行けない)が、**こちらも誰かが
+    行かないと物が動かない**。移動時間と交通費が通常の見積に入っていないので
+    既定では出さない。「越えられるか」と「引き受けられるか」は別問題。
+    """
+    from jpgate.gates import G4_IN_STORE, evaluate
+
+    it = item("1", [ICON_LOT_SALES], title="(1)【抽選販売】LUFFY's NBA HOUSE(会場受取)")
+    verdict = evaluate(it, [])
+    assert G4_IN_STORE in verdict.keys
+    assert verdict.needs_travel
+    assert not verdict.sellable          # 代行は出さない
+    assert not verdict.unknown           # が、関門は判明しているのでバッジは出る
+
+
+def test_venue_phrase_matching_stays_narrow():
+    """曖昧な語で現地受取を推測しない.
+
+    ここはアイコンでも config 宣言でもない第三の根拠なので、他に読みようの
+    ない文字列だけに限る。「イベント」「限定」で拾い始めると (a)(b) の規律が死ぬ。
+    """
+    from jpgate.gates import G4_IN_STORE, evaluate
+
+    for title in ("イベント限定フィギュア", "会場限定カラー", "店頭販売中"):
+        verdict = evaluate(item("1", [ICON_LOT_SALES], title=title), [])
+        assert G4_IN_STORE not in verdict.keys, title
+
+
+def test_ordinary_lottery_is_still_offered():
+    """現地受取でない抽選は従来どおり売る（絞りすぎの検出）."""
+    from jpgate.gates import evaluate
+
+    verdict = evaluate(item("1", [ICON_LOT_SALES], title="S.H.Figuarts テスト"), [])
+    assert not verdict.needs_travel
+    assert verdict.sellable
