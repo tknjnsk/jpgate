@@ -34,7 +34,7 @@ from .models import (
 )
 from .translate import Glossary
 
-_STATUS_LABEL = {
+STATUS_LABEL = {
     STATUS_LOTTERY: ("Lottery open", "lot"),
     STATUS_RESERVATION: ("Pre-order open", "pre"),
     STATUS_CLOSED: ("Closed", "shut"),
@@ -47,13 +47,13 @@ _STATUS_LABEL = {
 # 販売元 → X のハッシュタグ。**知らないソースには付けない**。
 # ソースを増やしたときにここへ足し忘れると、タグが1つになるだけで
 # 誤ったタグは出ない(黙って間違った販売元を名乗るより良い)。
-_SOURCE_HASHTAG = {
+SOURCE_HASHTAG = {
     "p-bandai": "#PBandai",
     "pokemon-center": "#PokemonCenter",
 }
 
 
-def _row_to_item(row: sqlite3.Row) -> Item:
+def row_to_item(row: sqlite3.Row) -> Item:
     return Item(
         source=row["source"],
         shop=row["shop"],
@@ -84,7 +84,7 @@ def render_site(
     gated = 0
     cat_counts: Counter[str] = Counter()
     for row in rows:
-        item = _row_to_item(row)
+        item = row_to_item(row)
         verdict = evaluate(item, gates_by_source.get(row["source"], []))
         if verdict.sellable:
             gated += 1
@@ -192,7 +192,7 @@ def _closed_section(
         '<ul class="grid">',
     ]
     for row in rows:
-        item = _row_to_item(row)
+        item = row_to_item(row)
         verdict = evaluate(item, gates_by_source.get(row["source"], []))
         lottery = ICON_LOT_SALES in item.icons
         links = links_for(
@@ -292,7 +292,7 @@ def _card(
     classifier: Classifier | None = None,
 ) -> str:
     title_en = html.escape(glossary.render(row["title"]))
-    status_label, status_cls = _STATUS_LABEL.get(row["status"], ("On sale", "on"))
+    status_label, status_cls = STATUS_LABEL.get(row["status"], ("On sale", "on"))
     price = f"¥{row['price_jpy']:,}" if row["price_jpy"] else "—"
 
     if verdict.unknown:
@@ -362,24 +362,24 @@ class XPost:
         return (self.source, self.item_id)
 
 
-def build_x_posts(
+def select_diverse(
     rows: list[sqlite3.Row],
-    gates_by_source: dict[str, list[SourceGate]],
-    glossary: Glossary,
-    cfg: Config,
-    limit: int = 10,
-    classifier: Classifier | None = None,
+    classifier: Classifier | None,
+    limit: int,
     exclude: set[tuple[str, str]] | None = None,
-) -> list[XPost]:
-    """X に手で貼る投稿文を1件ずつ作る。ゲートが確定しているものだけ。
+) -> list[sqlite3.Row]:
+    """カテゴリを持ち回りで拾って候補を並べる。
 
-    **カテゴリを持ち回りで拾う。** 素直に上から10件取ると全部が同じ
-    カテゴリになり（実際に10件すべて Trading Cards になった）、順に貼ると
-    アカウントがBotに見える。1カテゴリ連投は最も安いフォロー解除の理由。
+    素直に上から取ると全部が同じカテゴリになり（実際に10件すべて
+    Trading Cards になった）、順に貼るとアカウントがBotに見える。
+    1カテゴリ連投は最も安いフォロー解除の理由。
 
     `exclude` に (source, item_id) を渡すと**選抜の前に**落とす。後で落とすと
     枠を使い切った分だけ新しい商品が出てこなくなり、送信済みが増えるほど
     キューが痩せていく。
+
+    `limit` の3倍まで返す。呼び出し側はこの後さらにゲート等で落とすので、
+    ちょうど `limit` 件しか返さないと最終的に足りなくなる。
     """
     classifier = classifier or Classifier({})
     skip = exclude or set()
@@ -394,12 +394,30 @@ def build_x_posts(
         for cat in list(buckets):
             if buckets[cat]:
                 ordered.append(buckets[cat].pop(0))
+    return ordered
+
+
+def build_x_posts(
+    rows: list[sqlite3.Row],
+    gates_by_source: dict[str, list[SourceGate]],
+    glossary: Glossary,
+    cfg: Config,
+    limit: int = 10,
+    classifier: Classifier | None = None,
+    exclude: set[tuple[str, str]] | None = None,
+) -> list[XPost]:
+    """X に手で貼る投稿文を1件ずつ作る。ゲートが確定しているものだけ。
+
+    並べ替えと除外は `select_diverse` が持つ（動画側と同じ規則で選ぶため）。
+    """
+    classifier = classifier or Classifier({})
+    ordered = select_diverse(rows, classifier, limit, exclude)
 
     out: list[XPost] = []
     for row in ordered:
         if len(out) >= limit:
             break
-        item = _row_to_item(row)
+        item = row_to_item(row)
         verdict = evaluate(item, gates_by_source.get(row["source"], []))
         if not verdict.sellable:
             continue
@@ -419,7 +437,7 @@ def build_x_posts(
         # #PokemonCenter になる)。同じタグを2回出すと明確にBotに見えるので畳む。
         tags = " ".join(
             dict.fromkeys(
-                t for t in (line.hashtag, _SOURCE_HASHTAG.get(row["source"], "")) if t
+                t for t in (line.hashtag, SOURCE_HASHTAG.get(row["source"], "")) if t
             )
         )
         out.append(
@@ -427,7 +445,7 @@ def build_x_posts(
                 source=row["source"],
                 item_id=row["item_id"],
                 text=(
-                    f"{_STATUS_LABEL.get(row['status'], ('On sale', ''))[0]}:"
+                    f"{STATUS_LABEL.get(row['status'], ('On sale', ''))[0]}:"
                     f" {title} {price}\n"
                     f"Japan only — needs a {gate}.\n{row['url']}\n"
                     f"We're in Japan: {cfg.contact_url}\n{tags}"

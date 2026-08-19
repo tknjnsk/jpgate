@@ -6,6 +6,9 @@ __pycache__/
 *.pyc
 .pytest_cache/
 data/x_queue.txt
+
+# 生成した縦動画。手でTikTokへ上げるための中間物で、履歴に残す意味が無い。
+data/clips/
 .omc/
 
 # 内部用の文面集。リポジトリは公開なので追跡しない。

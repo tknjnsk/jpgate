@@ -141,6 +141,10 @@ notify:
   # 用語集での訳出率がこれ未満なら「原題のまま」と注記する。
   min_translation_coverage: 0.5
 
+clip:
+  # 1本の動画に入れる商品数。5件で35秒前後。増やすと最後まで見られなくなる。
+  max_items: 5
+
 output:
   db: data/jpgate.sqlite
   # GitHub Pages を main ブランチの /docs から配信するため docs 固定。
@@ -148,3 +152,5 @@ output:
   glossary: data/glossary.yaml
   # 「終了」欄の掲載数。古いものを載せ続けると二次流通にも無い商品が並ぶ。
   closed_limit: 60
+  # 生成した縦動画の置き場（git には入れない）。
+  clip_dir: data/clips

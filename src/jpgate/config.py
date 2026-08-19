@@ -68,6 +68,13 @@ class Config:
     #: 対象になるので、これが無いと初回だけ大量に飛ぶ。
     max_x_posts_per_run: int = 3
 
+    #: 生成した縦動画の置き場。Discord へ送ったあとも手元に残す
+    #: （TikTok へは手で上げるので、送信に失敗しても貼れる必要がある）。
+    clip_dir: Path = ROOT / "data" / "clips"
+    #: 1本の動画に入れる商品数。5件×5.5秒＋前後で35秒前後になる。
+    #: 増やすと尺が伸びて最後まで見られなくなる。
+    max_clip_items: int = 5
+
     @property
     def discord_webhook(self) -> str | None:
         return os.environ.get("JPGATE_DISCORD_WEBHOOK")
@@ -81,6 +88,15 @@ class Config:
         取り違えを構造的に防ぐ。未設定なら送信そのものを行わない。
         """
         return os.environ.get("JPGATE_X_QUEUE_WEBHOOK")
+
+    @property
+    def clip_webhook(self) -> str | None:
+        """動画の送り先。**`#drops` とは別のチャンネルにすること**.
+
+        x_queue_webhook と同じ理由。動画は自分がTikTokへ手で上げるための
+        受け渡しであって、メンバーに見せる告知ではない。
+        """
+        return os.environ.get("JPGATE_CLIP_WEBHOOK")
 
 
 #: Cloudflare のビーコントークンは16進の文字列。ドキュメントの例
@@ -147,6 +163,8 @@ def load(path: Path | str | None = None) -> Config:
         ),
         analytics_goatcounter=str(raw.get("analytics", {}).get("goatcounter_code", "") or ""),
         closed_limit=out.get("closed_limit", 60),
+        clip_dir=ROOT / out.get("clip_dir", "data/clips"),
+        max_clip_items=raw.get("clip", {}).get("max_items", 5),
         max_notify_per_run=raw.get("notify", {}).get("max_per_run", 20),
         min_translation_coverage=raw.get("notify", {}).get("min_translation_coverage", 0.5),
     )

@@ -92,6 +92,17 @@ CREATE TABLE IF NOT EXISTS x_posts_sent (
     PRIMARY KEY (source, item_id)
 );
 
+-- 動画に入れた商品の記録。x_posts_sent と同じ理由（毎回同じ商品で動画を
+-- 作ると、同じ5件が並んだ動画を延々と出すことになる）。
+-- x_posts_sent と分けているのは媒体が別だから。X に貼った商品を動画に
+-- 入れてはいけない理由は無く、共有すると片方の消費でもう片方が痩せる。
+CREATE TABLE IF NOT EXISTS clip_items_used (
+    source   TEXT NOT NULL,
+    item_id  TEXT NOT NULL,
+    used_at  TEXT NOT NULL,
+    PRIMARY KEY (source, item_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_events_pending ON events (notified_at, at);
 CREATE INDEX IF NOT EXISTS idx_items_status ON items (status, ship_month);
 """
@@ -253,6 +264,46 @@ class Store:
             [(s, i, at) for s, i in keys],
         )
         self.db.commit()
+
+    def clip_used_keys(self) -> set[tuple[str, str]]:
+        """既に動画に入れた商品の (source, item_id)。"""
+        return {
+            (r["source"], r["item_id"])
+            for r in self.db.execute("SELECT source, item_id FROM clip_items_used")
+        }
+
+    def mark_clip_used(self, keys: list[tuple[str, str]]) -> None:
+        """動画に入れた商品を記録する. **送信が成功してから呼ぶこと**.
+
+        mark_x_sent と同じ順序の理由。先に記録すると、送信に失敗したときに
+        その商品が二度と動画に出てこなくなる。
+        """
+        at = _now()
+        self.db.executemany(
+            "INSERT OR IGNORE INTO clip_items_used (source, item_id, used_at) "
+            "VALUES (?, ?, ?)",
+            [(s, i) + (at,) for s, i in keys],
+        )
+        self.db.commit()
+
+    def seed_at(self) -> dict[tuple[str, str], str]:
+        """ショップごとの初回成功走査の時刻。
+
+        `items.first_seen` は「最初に観測した時刻」であって「販売が始まった
+        時刻」ではない。初回走査（seed）で入った商品は、何ヶ月も前から並んで
+        いたものが全部その日の first_seen を持つ。これを開始日として出すと、
+        **数百件が同じ日に一斉に始まったという嘘**になる。
+
+        seed より後に現れた商品に限れば、first_seen は開始日と1時間以内で
+        一致する（毎時走査しているため）。その判定に使う。
+        """
+        return {
+            (r["source"], r["shop"]): r["at"]
+            for r in self.db.execute(
+                "SELECT source, shop, MIN(at) AS at FROM crawls "
+                "WHERE ok = 1 GROUP BY source, shop"
+            )
+        }
 
     def open_items(self) -> list[sqlite3.Row]:
         """Web ページ用。今なら申し込める／買えるもの。"""

@@ -10,6 +10,7 @@ A のほうが致命的なので、A を構造的に防いでいることをテ�
 from __future__ import annotations
 
 import sys
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -58,7 +59,7 @@ def item(item_id="1", icons=(), **kw) -> Item:
         title=kw.get("title", "テスト商品"),
         url=f"https://p-bandai.jp/item/item-{item_id}/",
         price_jpy=kw.get("price_jpy", 1000),
-        image=None,
+        image=kw.get("image"),
         summary="",
         icons=tuple(icons),
         ship_month=kw.get("ship_month"),
@@ -449,13 +450,13 @@ def test_source_hashtag_never_names_the_wrong_seller():
     フォローするので、ここを間違えると最も効く層に「調べていない」と伝わる。
     知らないソースはタグ**無し**が正しい(推測で販売元を名乗らない)。
     """
-    from jpgate.publish import _SOURCE_HASHTAG
+    from jpgate.publish import SOURCE_HASHTAG
 
-    assert _SOURCE_HASHTAG["p-bandai"] == "#PBandai"
-    assert _SOURCE_HASHTAG["pokemon-center"] == "#PokemonCenter"
-    assert _SOURCE_HASHTAG.get("未知のソース", "") == ""
+    assert SOURCE_HASHTAG["p-bandai"] == "#PBandai"
+    assert SOURCE_HASHTAG["pokemon-center"] == "#PokemonCenter"
+    assert SOURCE_HASHTAG.get("未知のソース", "") == ""
     # 同じタグを2つのソースに割り当てない(販売元の識別にならなくなる)。
-    assert len(set(_SOURCE_HASHTAG.values())) == len(_SOURCE_HASHTAG)
+    assert len(set(SOURCE_HASHTAG.values())) == len(SOURCE_HASHTAG)
 
 
 # --------------------------------------------------------------------------
@@ -646,3 +647,249 @@ def test_ordinary_lottery_is_still_offered():
     verdict = evaluate(item("1", [ICON_LOT_SALES], title="S.H.Figuarts テスト"), [])
     assert not verdict.needs_travel
     assert verdict.sellable
+
+
+# --------------------------------------------------------------------------
+# TikTok 用の縦動画
+# --------------------------------------------------------------------------
+IMG = "https://example.test/a.jpg"
+
+
+def _no_network(monkeypatch, data_uri="data:image/png;base64,AAAA"):
+    """画像取得だけを差し替える（テストでCDNを叩かない）。"""
+    from jpgate import clip
+
+    monkeypatch.setattr(
+        clip, "fetch_image", lambda url, source="", timeout=20: data_uri
+    )
+
+
+def test_clip_never_shows_an_item_we_cannot_sell(tmp_path, monkeypatch):
+    """UNKNOWN の商品に代行のCTAを出さない規則は媒体を問わない.
+
+    動画には「We can order it for you」が必ず入る。ゲートが確定していない商品を
+    入れると、越えられる関門を「越えられない」と売ることになる。
+    """
+    from jpgate import clip
+    from jpgate import config as cm
+
+    _no_network(monkeypatch)
+    store = Store(tmp_path / "t.sqlite")
+    # 予約アイコンだけ＝アイテム由来の根拠が無い。ソース宣言も渡さない。
+    store.apply(crawl(item("1", [ICON_RESERVE], image=IMG)))
+    cfg = cm.load()
+    assert clip.build_cards(store.open_items(), {}, Glossary({}), cfg) == []
+
+    # 抽選アイコンがあれば根拠になる。同じ経路で今度は出る。
+    store.apply(crawl(item("1", [ICON_LOT_SALES], image=IMG)))
+    cards = clip.build_cards(store.open_items(), {}, Glossary({}), cfg)
+    assert [c.item_id for c in cards] == ["1"]
+    store.close()
+
+
+def test_clip_drops_items_whose_image_cannot_be_fetched(tmp_path, monkeypatch):
+    """画像が取れない商品は動画に入れない.
+
+    HTML に CDN の URL を書いて Chromium に読ませると、失敗しても枠だけが
+    描かれて**中身の無い動画が黙って完成する**。取得の失敗は「その商品が
+    動画から落ちる」という形で表に出さなければならない。
+    """
+    from jpgate import clip
+    from jpgate import config as cm
+
+    _no_network(monkeypatch, data_uri=None)
+    store = Store(tmp_path / "t.sqlite")
+    store.apply(crawl(item("1", [ICON_LOT_SALES], image=IMG)))
+    assert clip.build_cards(store.open_items(), {}, Glossary({}), cm.load()) == []
+    store.close()
+
+
+def test_clip_never_uses_the_same_item_twice(tmp_path, monkeypatch):
+    """掲載中の商品は毎日出てくる。記録が無いと同じ5件の動画を作り続ける。"""
+    from jpgate import clip
+    from jpgate import config as cm
+
+    _no_network(monkeypatch)
+    store = Store(tmp_path / "t.sqlite")
+    store.apply(crawl(item("1", [ICON_LOT_SALES], image=IMG),
+                      item("2", [ICON_LOT_SALES], image=IMG)))
+    cfg = cm.load()
+    rows = store.open_items()
+
+    first = clip.build_cards(rows, {}, Glossary({}), cfg, exclude=store.clip_used_keys())
+    assert len(first) == 2
+
+    store.mark_clip_used([c.key for c in first])
+    assert clip.build_cards(rows, {}, Glossary({}), cfg, exclude=store.clip_used_keys()) == []
+    store.close()
+
+
+def test_clip_history_is_separate_from_x_drafts(tmp_path):
+    """媒体ごとに別の記録.
+
+    共有すると、X に貼った商品が動画から消える（逆も同じ）。片方の消費で
+    もう片方のキューが痩せる理由が無い。
+    """
+    store = Store(tmp_path / "t.sqlite")
+    store.mark_x_sent([("p-bandai", "1")])
+    assert store.clip_used_keys() == set()
+    store.mark_clip_used([("p-bandai", "2")])
+    assert store.x_sent_keys() == {("p-bandai", "1")}
+    store.close()
+
+
+def test_clip_length_comes_from_the_input_not_from_zoompan(tmp_path):
+    """`zoompan` の `d` に総コマ数を入れると**入力コマ数 × d コマ**出る.
+
+    `-loop 1` で与えた入力にその書き方をしたところ、28秒のつもりの動画が
+    150MB を超えても終わらなかった。`d=1` と入力側の `-framerate` で尺を
+    決めるのが正しい。両方を固定する。
+    """
+    from jpgate import clip
+
+    assert ":d=1:" in clip._zoompan(150, zoom_in=True)
+    assert ":d=1:" in clip._zoompan(150, zoom_in=False)
+
+    args = clip.compose_args(
+        [tmp_path / "a.png", tmp_path / "b.png"], [2.5, 5.5], tmp_path / "o.mp4", "ffmpeg"
+    )
+    assert args.count("-framerate") == 2
+    assert args.count(str(clip.FPS)) >= 2
+
+
+def test_clip_caption_carries_no_links():
+    """TikTok の説明欄でURLは押せない。押せないリンクを並べても信用を落とすだけ。"""
+    from jpgate import clip
+    from jpgate import config as cm
+
+    card = clip.Card(
+        source="p-bandai",
+        item_id="1",
+        status_label="Lottery open",
+        status_cls="lot",
+        title="テスト商品",
+        price="¥1,000",
+        gate_label="Japanese phone number",
+        gate_why="",
+        shop="tamashiiwebshouten",
+        url="https://p-bandai.jp/item/item-1/",
+        hashtags=("#TCG",),
+        image_data_uri="data:image/png;base64,AAAA",
+    )
+    text = clip.caption([card], cm.load())
+    assert "http" not in text
+    assert "Japanese phone number" in text
+
+
+def test_clip_never_claims_an_open_date_for_seeded_items(tmp_path):
+    """初回走査で入った商品に開始日を付けない.
+
+    `first_seen` は「最初に観測した時刻」。seed で入った数百件は全部その日の
+    first_seen を持つので、そのまま出すと**同じ日に一斉に始まった**という
+    嘘の動画ができる。言えないときは何も書かない。
+    """
+    from jpgate import clip
+
+    store = Store(tmp_path / "t.sqlite")
+    store.apply(crawl(item("1", [ICON_LOT_SALES], image=IMG)))
+    seed = store.seed_at()[("p-bandai", "tamashiiwebshouten")]
+
+    assert clip._opened_on(store.open_items()[0], seed) == ""
+
+    # seed より後に現れた商品なら、毎時走査しているので開始日と1時間以内で一致する。
+    store.db.execute(
+        "UPDATE items SET first_seen = ? WHERE item_id = '1'",
+        ("2027-01-02T04:00:00+00:00",),
+    )
+    assert clip._opened_on(store.open_items()[0], seed) == "02 Jan"
+    store.close()
+
+
+def test_clip_puts_the_site_on_every_card(tmp_path, monkeypatch):
+    """導線は最後の1枚に置かない.
+
+    動画の目的はサイトに来てもらうこと。CTAを最後だけにすると、途中で
+    離脱した人には何も残らない。
+    """
+    from jpgate import clip
+    from jpgate import config as cm
+
+    _no_network(monkeypatch)
+    store = Store(tmp_path / "t.sqlite")
+    store.apply(crawl(item("1", [ICON_LOT_SALES], image=IMG),
+                      item("2", [ICON_LOT_SALES], image=IMG)))
+    cfg = cm.load()
+    cards = clip.build_cards(store.open_items(), {}, Glossary({}), cfg)
+
+    html = clip.deck_html(cards, cfg, date(2026, 8, 19))
+    # 商品カードの数だけ帯が出る（＋最後の1枚のCTA）。
+    assert html.count("jpgate.net") >= len(cards)
+    store.close()
+
+
+def test_clip_bitrate_is_capped_so_it_fits_discord(tmp_path):
+    """商品を増やすとファイルが伸びる。上限を尺から決めておく.
+
+    CRF だけで作ると商品数に比例して伸び、5件で 8.0MB まで来た（Discord の
+    添付上限は10MB）。送る直前に落とすこともできるが、**動画を作り終えてから
+    落ちる**ので意味が薄い。長い動画ほど上限ビットレートが下がることを固定する。
+    """
+    from jpgate import clip
+    from jpgate.notify import FILE_LIMIT
+
+    def maxrate(n_items):
+        durations = [clip.INTRO_SEC] + [clip.ITEM_SEC] * n_items + [clip.OUTRO_SEC]
+        pngs = [tmp_path / f"{i}.png" for i in range(len(durations))]
+        args = clip.compose_args(pngs, durations, tmp_path / "o.mp4", "ffmpeg")
+        return int(args[args.index("-maxrate") + 1])
+
+    short, long = maxrate(3), maxrate(10)
+    assert long < short
+
+    # どちらの尺でも、上限ビットレート×尺が Discord の上限を超えない。
+    for n, rate in ((3, short), (10, long)):
+        seconds = clip.INTRO_SEC + clip.ITEM_SEC * n + clip.OUTRO_SEC
+        assert (rate + 96_000) * seconds / 8 <= FILE_LIMIT
+
+
+def test_clip_caption_is_sent_as_a_copyable_block():
+    """動画の説明文は TikTok に貼るための文.
+
+    X 下書きと同じで、そのままコピーできる形でないと意味が無い。素のテキストで
+    出すと Discord のUIから選択しづらく、モバイルではコピーボタンも出ない。
+    """
+    from jpgate.notify import code_block
+
+    body = code_block("Japan-only drops\n#Gunpla #PBandai")
+    assert body.startswith("```\n") and body.endswith("\n```")
+    assert "#Gunpla #PBandai" in body
+
+    # 商品名にバッククォートが混ざってもブロックが割れない。
+    assert "```" not in code_block("壊す```商品名")[4:-4]
+
+
+def test_clip_topic_tags_only_appear_on_matching_items(tmp_path, monkeypatch):
+    """商品名に入っている語からしかタグを作らない.
+
+    用語集は綴りを1つしか選べないが、タグは複数出せる（`カプセルトイ` は
+    商品名では Capsule Toy、タグでは #CapsuleToy と #Gashapon の両方）。
+    ただし**その語が入っていない商品には付けない**。販売元のタグを
+    間違えないのと同じ規律で、間違ったタグは「調べていない」と読まれる。
+    """
+    from jpgate import clip
+    from jpgate import config as cm
+
+    _no_network(monkeypatch)
+    store = Store(tmp_path / "t.sqlite")
+    store.apply(
+        crawl(
+            item("1", [ICON_LOT_SALES], image=IMG, title="キーホルダー【カプセルトイ】"),
+            item("2", [ICON_LOT_SALES], image=IMG, title="RG 1/144 テスト"),
+        )
+    )
+    cards = {c.item_id: c for c in clip.build_cards(
+        store.open_items(), {}, Glossary({}), cm.load()
+    )}
+    assert "#Gashapon" in cards["1"].hashtags
+    assert "#Gashapon" not in cards["2"].hashtags
+    store.close()

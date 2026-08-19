@@ -10,11 +10,14 @@ jpgate doctor    各経路が生きているか検査（スクレイパーは静
 jpgate scan      走査してイベントをDBに貯める
 jpgate notify    未通知イベントを Discord へ（既定は dry-run、送るには --no-dry-run）
 jpgate publish   site/index.html と site/x_queue.txt を作り直す
-jpgate run       scan → notify → publish（定期実行用）
+jpgate xqueue    未送信の X 下書きを Discord へ（既定は dry-run）
+jpgate clip      TikTok 用の縦動画を作って Discord へ（既定は dry-run）
+jpgate run       scan → notify → publish → xqueue（定期実行用）
 ```
 
 パッケージは未インストールなので **`PYTHONPATH=src`** が必要。
-Discord Webhook は `config.yaml` ではなく環境変数 `JPGATE_DISCORD_WEBHOOK`。
+Discord Webhook は `config.yaml` ではなく環境変数 `JPGATE_DISCORD_WEBHOOK`
+（X 下書きは `JPGATE_X_QUEUE_WEBHOOK`、動画は `JPGATE_CLIP_WEBHOOK`。**すべて別チャンネル**）。
 
 ---
 
@@ -126,6 +129,52 @@ Discord Webhook は `config.yaml` ではなく環境変数 `JPGATE_DISCORD_WEBHO
 
 API が有料なので自動投稿しない。`site/x_queue.txt` に投稿文を吐いて手で貼る。
 自動化できていないことをキューとして可視化しておくほうが、投稿が止まったときに気づける。
+
+## TikTok について
+
+`jpgate clip` が縦動画（1080x1920 / 5件で28秒前後）を1本作り、Discord に置く。
+そこから**手で** TikTok に上げる。API を通さないのは X と同じ理由。
+
+生成AIに台本を書かせていない。文面は `jpgate xqueue` と同じ経路
+（用語集＋ゲート定義）から来て、映像は走査時に取れている商品画像そのもの。
+**動画のために新しい主張を作らない**——関門を名指しできることが商売の根拠なので、
+検証できない文が1行混ざるだけで価値が薄まる。
+
+1枚のカードで言うことは4つだけ。**この日に始まった / 商品そのもの / いくら /
+どの関門で弾かれるか**。そして `jpgate.net` の帯を**全カードに**出す。
+CTAを最後の1枚に置くと、途中で離脱した人には何も残らない。
+
+開始日は**言える商品にだけ付く**。`first_seen` は「最初に観測した時刻」なので、
+初回走査（seed）で入った商品はそれが開始日ではない。seed より後に現れた商品に
+限れば毎時走査なので1時間以内で一致する。言える商品を先に選ぶようにしてあるが、
+言えないものには何も書かない（掲載439件中、日付を出せるのは43件）。
+
+無音で書き出す。TikTok は動画に埋め込んだBGMよりアプリ側で付けた曲のほうが
+リーチが出るので、曲は上げるときに乗せる（手動アップロードだからできる）。
+下 330px・右 190px は TikTok のUIが被るので、文字を置かない余白にしてある。
+
+要るもの: **ffmpeg**（`winget install Gyan.FFmpeg`、または `JPGATE_FFMPEG` で場所指定）と
+**playwright + chromium**。`jpgate doctor` の [6] が両方を見る。
+
+送り先は `JPGATE_CLIP_WEBHOOK`（ユーザー環境変数）。`#drops` とも X 下書きとも
+**別チャンネル**にしてある（3つとも channel_id が違うことを確認済み）。
+
+動画には TikTok の説明欄に貼る文が**コードブロックで一緒に付く**（商品名・価格・
+開始日・関門・ハッシュタグ）。X 下書きと同じ扱いで、貼るための文はそのまま
+コピーできる形でないと意味が無い（`notify.code_block`）。
+
+上限ビットレートを尺から決めている。CRF だけだと商品数に比例して伸び、5件で
+8.0MB まで来た（Discord の添付上限は10MB）。送る直前に落とすこともできるが、
+**動画を作り終えてから落ちる**ので、先に収まる形で作る。8件50秒でも6.4MB。
+
+`deploy.ps1`（毎時）には入れていない。毎時作ると手で上げる速度を超えるうえ、
+1回5件ずつ在庫を消費するのでキューがすぐ枯れる。1日1回、手で叩く前提。
+
+一度使った商品は `clip_items_used` に記録して二度目は出さない。X の記録とは別軸
+（同じ商品を X に貼り、かつ動画に入れてよい）。
+
+**未解決**: 商品画像を TikTok に載せる権利処理は詰めていない。慣行的には広く
+行われているが、特商法表記と同じ「事業側の宿題」の棚にある。
 
 ---
 

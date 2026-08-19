@@ -5,6 +5,7 @@
     jpgate notify    未通知イベントを Discord に流す
     jpgate publish   docs/index.html と data/x_queue.txt を作り直す
     jpgate xqueue    未送信の X 下書きを Discord へ（既定は dry-run）
+    jpgate clip      TikTok 用の縦動画を作って Discord へ（既定は dry-run）
     jpgate readiness アフィリエイト審査に出せる状態か判定する
     jpgate run       scan → notify → publish → xqueue（定期実行用）
 """
@@ -17,13 +18,14 @@ import sys
 from datetime import date, datetime
 from pathlib import Path
 
+from . import clip as clip_mod
 from . import config as config_mod
 from . import readiness
 from .config import Config
 from .gates import evaluate
 from .lines import Classifier
 from .models import Item
-from .notify import build_embed, post, post_text
+from .notify import build_embed, code_block, post, post_file, post_text
 from .publish import build_x_posts, render_site, render_x_posts, write
 from .sources import pbandai, pokecen
 from .store import Store
@@ -52,6 +54,17 @@ def _fix_console() -> None:
                 stream.reconfigure(errors="replace")
             except (ValueError, OSError):
                 pass
+
+
+def _probe_playwright() -> str:
+    try:
+        import playwright  # noqa: F401
+    except ImportError as exc:
+        raise RuntimeError(
+            "playwright が入っていません: "
+            "pip install playwright && playwright install chromium"
+        ) from exc
+    return "インストール済み（Chromium の有無は clip 実行時に分かります）"
 
 
 def _gates_by_source(cfg: Config) -> dict[str, list]:
@@ -125,6 +138,23 @@ def cmd_doctor(cfg: Config, args: argparse.Namespace) -> int:
     else:
         print("    ! JPGATE_DISCORD_WEBHOOK が未設定。通知は出ません")
         failures += 1
+
+    print("[6] 動画（clip）の前提")
+    # ここは **JPGATE_CLIP_WEBHOOK が設定されているときだけ** 失敗として数える。
+    # 動画を使っていない環境で doctor を赤くしても、直すべきことが増えるだけ。
+    using_clips = bool(cfg.clip_webhook)
+    for label, probe in (
+        ("ffmpeg", clip_mod.ffmpeg_path),
+        ("playwright", _probe_playwright),
+    ):
+        try:
+            print(f"    - {label}: {probe()}")
+        except RuntimeError as exc:
+            print(f"    {'!' if using_clips else '-'} {label}: {exc}")
+            if using_clips:
+                failures += 1
+    if not using_clips:
+        print("    - JPGATE_CLIP_WEBHOOK が未設定（clip は dry-run でのみ使えます）")
 
     print()
     print("doctor: OK" if failures == 0 else f"doctor: {failures} 件の問題")
@@ -316,6 +346,70 @@ def cmd_xqueue(cfg: Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_clip(cfg: Config, args: argparse.Namespace) -> int:
+    """TikTok 用の縦動画を1本作る。
+
+    **`run` には入れていない。** 毎時の走査ごとに動画を作っても、手で上げる
+    速度を超えるだけで意味が無い。1日1本を手で叩く前提のコマンド。
+    """
+    store = Store(cfg.db_path)
+    glossary = Glossary.load(cfg.glossary_path)
+    gates = _gates_by_source(cfg)
+    try:
+        rows = store.open_items()
+        if not rows:
+            # publish / xqueue と同じ理由。走査が壊れているときに
+            # 「何も無い」と振る舞うと、静かに止まったことに気づけない。
+            print("! 掲載できる商品が0件。走査が壊れている可能性があります")
+            return 1
+
+        limit = args.limit or cfg.max_clip_items
+        cards = clip_mod.build_cards(
+            rows,
+            gates,
+            glossary,
+            cfg,
+            limit=limit,
+            classifier=Classifier.load(cfg.lines_path),
+            exclude=store.clip_used_keys(),
+            seed_at=store.seed_at(),
+        )
+        if not cards:
+            print("動画に入れる新しい商品がありません")
+            return 0
+
+        stamp = datetime.now().strftime("%Y%m%d-%H%M")
+        out = cfg.clip_dir / f"jpgate-{stamp}.mp4"
+        clip_mod.render(cards, cfg, out)
+        text = clip_mod.caption(cards, cfg)
+        size_mb = out.stat().st_size / 1048576
+
+        print(f"- {out} ({size_mb:.1f}MB / 商品 {len(cards)}件)")
+        print("--- TikTok の説明欄")
+        print(text)
+
+        if args.dry_run:
+            print("\n(dry-run: 動画は作りました。送信も既読化もしていません)")
+            return 0
+
+        if not cfg.clip_webhook:
+            print(
+                "! JPGATE_CLIP_WEBHOOK が未設定。送信できません\n"
+                "  #drops とは別のチャンネルの webhook を設定してください"
+            )
+            return 1
+
+        # 説明文はコードブロックで置く。X 下書きと同じ理由で、貼るための文は
+        # そのままコピーできる形でないと意味が無い。
+        post_file(cfg.clip_webhook, out, code_block(text))
+        # 送信が成功してから既読にする。逆にすると落ちたときに黙って消える。
+        store.mark_clip_used([c.key for c in cards])
+        print(f"\nDiscord へ送信しました（{len(cards)}件を使用済みに記録）")
+    finally:
+        store.close()
+    return 0
+
+
 def cmd_run(cfg: Config, args: argparse.Namespace) -> int:
     rc = cmd_scan(cfg, args)
     cmd_notify(cfg, args)
@@ -343,16 +437,24 @@ def main(argv: list[str] | None = None) -> int:
 
     parser = argparse.ArgumentParser(prog="jpgate", description=__doc__, parents=[common])
     sub = parser.add_subparsers(dest="cmd", required=True)
+    parsers = {}
     for name, fn in (
         ("doctor", cmd_doctor),
         ("scan", cmd_scan),
         ("notify", cmd_notify),
         ("publish", cmd_publish),
         ("xqueue", cmd_xqueue),
+        ("clip", cmd_clip),
         ("readiness", cmd_readiness),
         ("run", cmd_run),
     ):
-        sub.add_parser(name, parents=[common]).set_defaults(func=fn)
+        parsers[name] = sub.add_parser(name, parents=[common])
+        parsers[name].set_defaults(func=fn)
+    parsers["clip"].add_argument(
+        "--limit", type=int, default=None, help="1本に入れる商品数（既定は config の clip.max_items）"
+    )
+    # clip 以外でも args.limit を参照できるようにしておく（cmd_run 経由の事故防止）。
+    parser.set_defaults(limit=None)
 
     args = parser.parse_args(argv)
     cfg = config_mod.load(args.config)

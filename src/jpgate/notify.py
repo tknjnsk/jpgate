@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import uuid
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 from .config import Config
 from .gates import GATE_DEFS, GateVerdict, badges_en
@@ -124,19 +126,25 @@ def _send(webhook: str, payload: dict, timeout: int) -> None:
             )
 
 
-def post_text(webhook: str, contents: list[str], timeout: int = 30) -> None:
-    """素のテキストを1件1メッセージで投げる.
+def code_block(content: str) -> str:
+    """コピペ用に整形する.
 
-    embed ではなくコードブロックにするのは**コピペのため**。embed の本文は
-    Discord のUIから選択しづらく、装飾記号も一緒に拾ってしまう。
-    コードブロックならモバイルでもコピーボタンが出る。
+    素のテキストや embed ではなくコードブロックにするのは**コピペのため**。
+    embed の本文は Discord のUIから選択しづらく、装飾記号も一緒に拾ってしまう。
+    コードブロックならモバイルでもコピーボタンが出る。X の下書きも動画の
+    説明文も、行き先（X / TikTok）に貼るための文なので扱いは同じ。
 
     投稿文にバッククォートは入らない設計だが、将来商品名に混ざるとコード
     ブロックが割れて残りが Markdown として解釈される。閉じ記号と衝突する
     3連バッククォートだけ潰しておく。
     """
+    return f"```\n{content.replace('```', '` ` `')}\n```"
+
+
+def post_text(webhook: str, contents: list[str], timeout: int = 30) -> None:
+    """素のテキストを1件1メッセージで投げる。"""
     for content in contents:
-        body = f"```\n{content.replace('```', '` ` `')}\n```"
+        body = code_block(content)
         if len(body) > _CONTENT_LIMIT:
             # X の投稿は280字なので通常あり得ない。起きたら黙って切るより
             # 送らないほうがよい(切れた文面を貼られるのが最悪)。
@@ -159,3 +167,56 @@ def post(webhook: str, embeds: list[dict], timeout: int = 30) -> None:
                 raise urllib.error.HTTPError(
                     webhook, resp.status, "discord rejected", resp.headers, None
                 )
+
+
+#: Discord の添付上限（ブースト無しのサーバー）。超えると 413 が返るだけで
+#: 理由が分からないので、送る前に落とす。
+FILE_LIMIT = 10 * 1024 * 1024
+
+
+def post_file(
+    webhook: str, path: Path, content: str = "", timeout: int = 120
+) -> None:
+    """ファイルを1件添付して投げる（動画の受け渡し用）。
+
+    multipart を手で組んでいるのは、依存を増やさないため。Discord は
+    `payload_json` と `files[0]` の2フィールドだけ見る。
+    """
+    data = path.read_bytes()
+    if len(data) > FILE_LIMIT:
+        raise ValueError(
+            f"{path.name} は {len(data) / 1048576:.1f}MB あり、Discord の上限"
+            f"（{FILE_LIMIT // 1048576}MB）を超えています"
+        )
+    if len(content) > _CONTENT_LIMIT:
+        raise ValueError(f"Discord の2000字上限を超える本文: {len(content)}字")
+
+    boundary = "----jpgate" + uuid.uuid4().hex
+    crlf = "\r\n".encode()
+    body = bytearray()
+    body += b"--" + boundary.encode() + crlf
+    body += b'Content-Disposition: form-data; name="payload_json"' + crlf
+    body += b"Content-Type: application/json" + crlf + crlf
+    body += json.dumps({"content": content}).encode("utf-8") + crlf
+    body += b"--" + boundary.encode() + crlf
+    body += (
+        f'Content-Disposition: form-data; name="files[0]"; filename="{path.name}"'
+    ).encode("utf-8") + crlf
+    body += b"Content-Type: application/octet-stream" + crlf + crlf
+    body += data + crlf
+    body += b"--" + boundary.encode() + b"--" + crlf
+
+    req = urllib.request.Request(
+        webhook,
+        data=bytes(body),
+        headers={
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "User-Agent": _UA,
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        if resp.status >= 300:
+            raise urllib.error.HTTPError(
+                webhook, resp.status, "discord rejected", resp.headers, None
+            )
