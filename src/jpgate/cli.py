@@ -88,7 +88,7 @@ def cmd_doctor(cfg: Config, args: argparse.Namespace) -> int:
         # 400 を返すだけで理由が読めないので、ここで気づけるようにする。
         print("    通知先=フォーラム（1件1投稿・thread_name を付けて送ります）")
         classifier = Classifier.load(cfg.lines_path)
-        known = set(classifier.categories())
+        known = set(classifier.categories)
         unknown = sorted(k for k in cfg.notify_forum_tags if k not in known)
         if unknown:
             print(f"    ! forum_tags に未知のジャンル: {unknown}")

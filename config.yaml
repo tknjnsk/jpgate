@@ -162,7 +162,7 @@ notify:
   # **webhook の向き先と必ず一致させること。** フォーラムに thread_name
   # 無しで投げても、通常チャンネルに thread_name 付きで投げても、
   # Discord は 400 を返す。どちらも理由が読めないので doctor で先に見る。
-  forum: false
+  forum: true
 
   # ジャンル → フォーラムのタグID。**空でも投稿はできる**(タグが付かないだけ)。
   # ID は Discord の開発者モードを入れて、タグを右クリックして取る。

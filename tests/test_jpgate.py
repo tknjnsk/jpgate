@@ -375,6 +375,28 @@ def test_waiting_room_is_reported_not_bypassed():
     assert "順番待ち" in str(e.value)
 
 
+def test_doctor_runs_in_forum_mode(capsys):
+    """doctor はフォーラム設定でも通る。
+
+    フォーラム用の分岐は `notify.forum: true` のときしか実行されないので、
+    通常設定のテストだけでは落ちない（実際に `categories` をメソッドとして
+    呼ぶ誤りが素通りし、切り替えた瞬間に doctor が落ちた）。
+    """
+    import argparse
+
+    from jpgate import config as cm
+    from jpgate.cli import cmd_doctor
+
+    cfg = cm.load()
+    cfg.notify_forum = True
+    cfg.notify_forum_tags = {"Gunpla": "1", "ソンナジャンルナイ": "2"}
+    cmd_doctor(cfg, argparse.Namespace(dry_run=True))
+    out = capsys.readouterr().out
+    assert "フォーラム" in out
+    # 綴り違いはタグが付かないまま静かに壊れるので、doctor で名指しする。
+    assert "ソンナジャンルナイ" in out
+
+
 def test_forum_post_carries_thread_name_and_tags(monkeypatch):
     """フォーラムは1件1投稿。タイトルと タグID が payload に乗る。
 
