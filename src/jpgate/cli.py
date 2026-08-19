@@ -25,7 +25,7 @@ from .config import Config
 from .gates import evaluate
 from .lines import Classifier
 from .models import Item
-from .notify import build_embed, code_block, post, post_file, post_text
+from .notify import build_embed, code_block, post, post_file, post_forum, post_text
 from .publish import build_x_posts, render_site, render_x_posts, write
 from .sources import pbandai, pokecen
 from .store import Store
@@ -82,6 +82,22 @@ def cmd_doctor(cfg: Config, args: argparse.Namespace) -> int:
     if "CHANGEME" in cfg.contact_url:
         print("    ! contact_url が既定のままです。通知のCTAが死にリンクになります")
         failures += 1
+
+    if cfg.notify_forum:
+        # 向き先とモードがずれていると通知が全部落ちる。落ちても Discord は
+        # 400 を返すだけで理由が読めないので、ここで気づけるようにする。
+        print("    通知先=フォーラム（1件1投稿・thread_name を付けて送ります）")
+        classifier = Classifier.load(cfg.lines_path)
+        known = set(classifier.categories())
+        unknown = sorted(k for k in cfg.notify_forum_tags if k not in known)
+        if unknown:
+            print(f"    ! forum_tags に未知のジャンル: {unknown}")
+            print("      lines.yaml の category と綴りが違うとタグが付きません")
+            failures += 1
+        if not cfg.notify_forum_tags:
+            print("    - forum_tags が空です。タグ無しで投稿します（投稿自体はできます）")
+    else:
+        print("    通知先=通常チャンネル（まとめ送り）")
 
     print("[2] ゲート宣言の鮮度")
     for src in cfg.sources:
@@ -245,10 +261,28 @@ def cmd_notify(cfg: Config, args: argparse.Namespace) -> int:
             print("! JPGATE_DISCORD_WEBHOOK が未設定。送信できません")
             return 1
 
-        post(cfg.discord_webhook, embeds)
-        # 送信が成功してから既読にする。逆にすると落ちたときに黙って消える。
-        store.mark_notified(ids)
-        print(f"{len(embeds)} 件送信")
+        if cfg.notify_forum:
+            # 1件ずつ送り、**1件ごとに既読にする**。まとめて既読にすると、
+            # 途中で落ちたときに送信済みのぶんが次回また飛ぶ。
+            classifier = Classifier.load(cfg.lines_path)
+            sent = 0
+            for row, embed, eid in zip(rows, embeds, ids):
+                category = classifier.classify(row["title"], row["source"]).category
+                tag = cfg.notify_forum_tags.get(category)
+                post_forum(
+                    cfg.discord_webhook,
+                    embed,
+                    thread_name=embed["title"],
+                    tag_ids=[tag] if tag else None,
+                )
+                store.mark_notified([eid])
+                sent += 1
+            print(f"{sent} 件送信（フォーラム）")
+        else:
+            post(cfg.discord_webhook, embeds)
+            # 送信が成功してから既読にする。逆にすると落ちたときに黙って消える。
+            store.mark_notified(ids)
+            print(f"{len(embeds)} 件送信")
     finally:
         store.close()
     return 0

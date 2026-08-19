@@ -152,6 +152,39 @@ def post_text(webhook: str, contents: list[str], timeout: int = 30) -> None:
         _send(webhook, {"content": body}, timeout)
 
 
+#: フォーラム投稿のタイトル上限。超えると Discord が拒否する。
+_THREAD_NAME_LIMIT = 100
+#: 1スレッドに付けられるタグ数の上限。
+_APPLIED_TAGS_LIMIT = 5
+
+
+def post_forum(
+    webhook: str,
+    embed: dict,
+    thread_name: str,
+    tag_ids: list[str] | None = None,
+    timeout: int = 30,
+) -> None:
+    """フォーラムチャンネルへ**1件を1投稿として**投げる。
+
+    通常のチャンネルと違い、まとめ送りをしない。1リクエストに embed を
+    10件入れると「10商品が入った1つの投稿」になり、流れて消えないという
+    フォーラムの利点が消えるため。
+
+    呼び出し側は**1件送るごとに既読にする**こと。まとめて既読にすると、
+    途中で落ちたときに送信済みのぶんが再送される。
+    """
+    name = thread_name.strip() or "Drop"
+    payload: dict = {
+        # Discord は空のタイトルを拒否する。切り詰めで空になる余地を潰す。
+        "thread_name": name[:_THREAD_NAME_LIMIT],
+        "embeds": [embed],
+    }
+    if tag_ids:
+        payload["applied_tags"] = list(tag_ids)[:_APPLIED_TAGS_LIMIT]
+    _send(webhook, payload, timeout)
+
+
 def post(webhook: str, embeds: list[dict], timeout: int = 30) -> None:
     """Discord へ投げる。embed は1リクエスト10件が上限。"""
     for i in range(0, len(embeds), 10):

@@ -64,6 +64,23 @@ class Config:
     #: 訳出率がこれ未満なら「原題のまま」注記を付ける。
     min_translation_coverage: float = 0.5
 
+    #: 通知先がフォーラムチャンネルか。
+    #:
+    #: **間違えると通知が全部落ちる。** フォーラムに `thread_name` 無しで
+    #: 投げると Discord が拒否し、逆に通常のテキストチャンネルへ
+    #: `thread_name` を付けても拒否される。どちらも 400 が返るだけで
+    #: 理由が読めないので、doctor で先に警告する。
+    #:
+    #: フォーラムにすると1件が1投稿になり、流れて消えない。ジャンルは
+    #: チャンネルを分けずにタグで絞れる(件数の少ないジャンル用に空の
+    #: チャンネルを作らずに済む)。
+    notify_forum: bool = False
+    #: ジャンル → フォーラムのタグID。空なら**タグ無しで投稿する**。
+    #:
+    #: タグIDが手に入らなくても投稿自体は始められるようにしてある。
+    #: ID は Discord の開発者モードでタグを右クリックして取得する。
+    notify_forum_tags: dict[str, str] = field(default_factory=dict)
+
     #: 1回に Discord へ送る X 下書きの上限。初回は掲載中の商品が丸ごと
     #: 対象になるので、これが無いと初回だけ大量に飛ぶ。
     max_x_posts_per_run: int = 3
@@ -167,4 +184,9 @@ def load(path: Path | str | None = None) -> Config:
         max_clip_items=raw.get("clip", {}).get("max_items", 5),
         max_notify_per_run=raw.get("notify", {}).get("max_per_run", 20),
         min_translation_coverage=raw.get("notify", {}).get("min_translation_coverage", 0.5),
+        notify_forum=bool(raw.get("notify", {}).get("forum", False)),
+        notify_forum_tags={
+            str(k): str(v)
+            for k, v in (raw.get("notify", {}).get("forum_tags") or {}).items()
+        },
     )

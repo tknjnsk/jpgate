@@ -375,6 +375,42 @@ def test_waiting_room_is_reported_not_bypassed():
     assert "順番待ち" in str(e.value)
 
 
+def test_forum_post_carries_thread_name_and_tags(monkeypatch):
+    """フォーラムは1件1投稿。タイトルと タグID が payload に乗る。
+
+    thread_name が無いと Discord は 400 を返す。理由が読めない失敗なので
+    形をここで固定しておく。
+    """
+    from jpgate import notify as nm
+
+    seen = []
+    monkeypatch.setattr(nm, "_send", lambda w, p, t: seen.append(p))
+
+    nm.post_forum("https://x", {"title": "t"}, thread_name="RG Exia", tag_ids=["42"])
+    assert seen[0]["thread_name"] == "RG Exia"
+    assert seen[0]["applied_tags"] == ["42"]
+    assert len(seen[0]["embeds"]) == 1  # まとめ送りしない
+
+    # タグIDが無くても投稿できる（タグが付かないだけ）。
+    seen.clear()
+    nm.post_forum("https://x", {"title": "t"}, thread_name="RG Exia")
+    assert "applied_tags" not in seen[0]
+
+
+def test_forum_thread_name_never_empty_or_too_long(monkeypatch):
+    """タイトルは100字上限。**空も拒否される**ので切り詰めで空にしない。"""
+    from jpgate import notify as nm
+
+    seen = []
+    monkeypatch.setattr(nm, "_send", lambda w, p, t: seen.append(p))
+
+    nm.post_forum("https://x", {}, thread_name="あ" * 300)
+    assert len(seen[0]["thread_name"]) == 100
+
+    nm.post_forum("https://x", {}, thread_name="   ")
+    assert seen[1]["thread_name"]  # 空白だけでも空にしない
+
+
 def test_quote_shipping_matches_the_official_table():
     """送料は日本郵便の公式額そのもの。**丸めない**。
 
