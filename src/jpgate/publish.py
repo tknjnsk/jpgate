@@ -34,6 +34,33 @@ from .models import (
 )
 from .translate import Glossary
 
+#: 特定商取引法にもとづく表記。**広告を出す場所すべてに必要**なので、
+#: サイトはフッタで全ページに出す（Discord は #start-here に手で貼る）。
+#:
+#: 氏名は省略できない。住所と電話は「請求があれば遅滞なく提供する」と
+#: 明示すれば省略でき、消費者庁の基準がこれを認めている。
+#: **したがってバーチャルオフィスは不要** ―― 実際に請求されてから考える。
+#:
+#: ここを書き換えるときは Discord の #start-here と SOCIAL_COPY.md も
+#: 同時に直すこと。食い違うと、どちらが本物か客に判断できない。
+BUSINESS_OPERATOR = "Junsuke Takano"
+BUSINESS_CONTACT = "tfy.jnsk@gmail.com"
+BUSINESS_TERMS_EN = [
+    ("What we sell", "A purchasing service. We buy an item in Japan on your "
+     "behalf and forward it to you. We are not the manufacturer or the retailer."),
+    ("Price", "¥2,500 per shipment plus 20% of each item (minimum ¥500 an "
+     "item). Shipping and customs duty are passed through at cost. Lotteries and "
+     "limited runs are quoted individually. You see the full figure before you pay."),
+    ("When you pay", "After we have secured the item, never before. Lottery "
+     "entries cost you nothing if we do not win."),
+    ("Delivery", "Japan Post, tracked. Pre-orders ship on the maker's schedule, "
+     "which is often several months out; we tell you the month before you order."),
+    ("Cancellations and refunds", "Once we have bought the item it cannot be "
+     "cancelled, because we bought it for you specifically. If we fail to obtain "
+     "it, you get a full refund. If it arrives damaged, send us photos and we "
+     "will make it right."),
+]
+
 STATUS_LABEL = {
     STATUS_LOTTERY: ("Lottery open", "lot"),
     STATUS_RESERVATION: ("Pre-order open", "pre"),
@@ -142,9 +169,34 @@ def render_site(
     ]
     if cfg.affiliate.any_enabled:
         footer.append(f'<p class="disclosure">{html.escape(DISCLOSURE_EN)}</p>')
+    footer.append(_business_info())
     footer.append("</footer>")
     parts.extend(footer)
     return "\n".join(parts)
+
+
+def _business_info() -> str:
+    """特商法表記。**全ページのフッタに出す**（表示義務は広告単位）。
+
+    住所と電話を省略する代わりに「請求があれば遅滞なく提供する」と
+    明示する必要があるので、この一文は消さないこと。消すと省略が
+    成立しなくなり、住所の掲載義務が復活する。
+    """
+    rows = "".join(
+        f"<dt>{html.escape(term)}</dt><dd>{html.escape(body)}</dd>"
+        for term, body in BUSINESS_TERMS_EN
+    )
+    contact = html.escape(BUSINESS_CONTACT)
+    return (
+        '<section class="legal">'
+        "<h2>Business information</h2>"
+        f"<p>Operator: {html.escape(BUSINESS_OPERATOR)}<br>"
+        f'Contact: <a href="mailto:{contact}">{contact}</a><br>'
+        "Address and phone number: provided without delay on request "
+        "— just ask.</p>"
+        f"<dl>{rows}</dl>"
+        "</section>"
+    )
 
 
 def _filter_bar(cat_counts: "Counter[str]", gated: int) -> str:
@@ -596,4 +648,11 @@ line-height:1.35;overflow-wrap:anywhere}
 .gates li.unknown:before{content:"\\26A0\\FE0F  "}
 footer p{color:var(--mut);font-size:.85rem;max-width:70ch;
 border-top:1px solid var(--line);padding-top:1.25rem;margin-top:3rem}
+.legal{border-top:1px solid var(--line);margin-top:3rem;padding-top:1.25rem;
+max-width:70ch}
+.legal h2{font-size:.9rem;color:var(--fg);margin:0 0 .6rem}
+.legal p{border-top:0;margin:0 0 .9rem;padding-top:0}
+.legal dl{margin:0;color:var(--mut);font-size:.85rem}
+.legal dt{font-weight:600;margin-top:.7rem}
+.legal dd{margin:.15rem 0 0}
 </style>"""

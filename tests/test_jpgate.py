@@ -355,6 +355,25 @@ def test_closed_lottery_card_sells_own_service_not_affiliate(tmp_path):
     store.close()
 
 
+def test_site_carries_the_legal_disclosure(tmp_path):
+    """特商法表記はフッタに必ず出る。**掲載0件でも出る**。
+
+    表示義務は「広告」単位なので、商品が並んでいない日でも
+    勧誘しているページであることに変わりはない。
+
+    住所・電話を省略する条件は「請求があれば遅滞なく提供する」と
+    書いてあることなので、その一文が消えたら省略が成立しなくなる。
+    ここが落ちたら文言を戻すこと。
+    """
+    from jpgate import config as cm
+    from jpgate.publish import BUSINESS_CONTACT, BUSINESS_OPERATOR, render_site
+
+    page = render_site([], {}, Glossary({}), cm.load(), closed_rows=[])
+    assert BUSINESS_OPERATOR in page
+    assert BUSINESS_CONTACT in page
+    assert "provided without delay on request" in page
+
+
 def test_fullwidth_model_codes_become_searchable():
     """型番が全角のままだと海外の検索に当たらない（`ＨＧ` では eBay で0件）。"""
     g = Glossary({})
