@@ -53,9 +53,38 @@ class ListingError(RuntimeError):
     """一覧ページとして読めなかった。空の結果と区別するための例外。"""
 
 
+#: 順番待ち(バーチャルウェイティングルーム)へ飛ばされたときの転送先ホスト。
+#:
+#: 大型発売の前後に、サイト全体がここへリダイレクトされる。**これは障害では
+#: なく、店が意図的に入口を絞っている状態**なので、迂回してはいけない。
+#: 迂回は相手が立てたアクセス制御を破ることであり、実際の客の順番も奪う。
+#: 待って、次の走査で通ればよい。
+_WAITING_ROOM_HOST = "wr.pokemoncenter-online.com"
+
+
+class _DetectWaitingRoom(urllib.request.HTTPRedirectHandler):
+    """順番待ちへの転送を、意味の分かる例外に変える。
+
+    そのままだと urllib が「無限リダイレクト」として失敗し、ログには
+    HTTP の内部事情しか残らない。原因が読み取れないと、設定を疑って
+    カテゴリ名を書き換えるといった見当違いの対処を誘発する。
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if _WAITING_ROOM_HOST in newurl:
+            raise ListingError(
+                "ポケモンセンターが順番待ち中です。走査は迂回せず見送ります "
+                f"(転送先 {_WAITING_ROOM_HOST})。混雑が引けば次の走査で通ります。"
+            )
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_OPENER = urllib.request.build_opener(_DetectWaitingRoom)
+
+
 def _fetch(url: str, timeout: int) -> str:
     req = urllib.request.Request(url, headers=_HEADERS)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with _OPENER.open(req, timeout=timeout) as resp:
         return resp.read().decode("utf-8", errors="replace")
 
 

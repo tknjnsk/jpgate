@@ -355,6 +355,26 @@ def test_closed_lottery_card_sells_own_service_not_affiliate(tmp_path):
     store.close()
 
 
+def test_waiting_room_is_reported_not_bypassed():
+    """順番待ちへの転送は、迂回せず読める理由にして落とす。
+
+    店が意図的に入口を絞っている状態なので、抜ける実装を足してはいけない。
+    素の urllib だと「無限リダイレクト」としか出ず、原因が読めないために
+    設定を疑う方向へ誤誘導される（実際に一度そうなった）。
+    """
+    import pytest
+
+    from jpgate.sources.pokecen import ListingError, _DetectWaitingRoom
+
+    h = _DetectWaitingRoom()
+    with pytest.raises(ListingError) as e:
+        h.redirect_request(
+            None, None, 302, "Found", {},
+            "https://wr.pokemoncenter-online.com/?c=pol&e=wr20260820ec",
+        )
+    assert "順番待ち" in str(e.value)
+
+
 def test_site_carries_the_legal_disclosure(tmp_path):
     """特商法表記はフッタに必ず出る。**掲載0件でも出る**。
 
