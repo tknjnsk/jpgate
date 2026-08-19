@@ -375,6 +375,84 @@ def test_waiting_room_is_reported_not_bypassed():
     assert "順番待ち" in str(e.value)
 
 
+def test_quote_shipping_matches_the_official_table():
+    """送料は日本郵便の公式額そのもの。**丸めない**。
+
+    ここがずれると、こちらが黙って差額を被る(客には見えない)。
+    KujiRadar が同じ表を別に持っているので、料金改定のときは
+    両方のテストが落ちるようになっている。
+    """
+    from jpgate.quote import AIRPACKET, EMS, shipping_jpy
+
+    assert shipping_jpy(100) == (1200, AIRPACKET)
+    assert shipping_jpy(1000) == (3090, AIRPACKET)
+    assert shipping_jpy(2000) == (5190, AIRPACKET)
+    # 刻みは切り上げ。101g は 200g の料金。
+    assert shipping_jpy(101) == (1410, AIRPACKET)
+    # 2kg を1gでも超えたら EMS しか無い。
+    assert shipping_jpy(2001) == (9100, EMS)
+
+
+def test_quote_minimum_fee_protects_cheap_items():
+    """安い商品でも1点あたりの手間は消えない。20%が下限を割ったら下限を採る。
+
+    カタログの中央値は¥3,080で、半分は¥3,000以下。**主戦場がここ**なので
+    下限が効かないと、手間だけかかって取り分が消える。
+    """
+    from jpgate.quote import LineItem
+
+    assert LineItem("cheap", 1320, 100).fee_jpy == 500  # 20% なら¥264
+    assert LineItem("mid", 3080, 250).fee_jpy == 616
+
+
+def test_quote_duty_only_above_the_us_threshold():
+    """関税は申告額 US$100 超のときだけ。**手数料と送料は課税対象ではない**。
+
+    総額に掛けると客に過大請求になる。立替は実費でしか受け取らないと
+    書いてあるので、多く取ったら約束を破ることになる。
+    """
+    from jpgate.quote import LineItem, build_quote
+
+    under = build_quote([LineItem("a", 14000, 500)])
+    assert under.duty_jpy == 0
+    # 敷居以下なら「暫定」も立たない(そもそも関税が発生しない)。
+    assert under.duty_provisional is False
+
+    over = build_quote([LineItem("a", 39600, 1000)])
+    assert over.duty_jpy == 3960  # 商品代のみ×10%。手数料・送料は含めない
+    assert over.duty_provisional is True
+
+    # 実額が分かったら暫定の印が消える。
+    known = build_quote([LineItem("a", 39600, 1000)], duty_rate=0.043)
+    assert known.duty_provisional is False
+
+
+def test_quote_net_excludes_pass_through():
+    """手取りは手数料だけ。商品代・送料・関税は預かっているだけで売上ではない。
+
+    ここを混ぜると、立替の大きい高額案件が儲かっているように見える。
+    """
+    from jpgate.quote import LineItem, build_quote
+
+    q = build_quote([LineItem("a", 39600, 1000)])
+    assert q.net_jpy == q.item_fees_jpy + q.shipment_fee_jpy - q.paypal_jpy
+    assert q.net_jpy < q.item_fees_jpy + q.shipment_fee_jpy  # PayPal のぶん必ず減る
+
+
+def test_customer_quote_has_no_japanese():
+    """客に貼る文面に日本語を混ぜない。
+
+    便種の表示名がそのまま漏れて「Shipping (国際エアパケット, 650g)」と
+    出た。海外の客には読めないうえ、機械翻訳の雑な代行に見える。
+    """
+    from jpgate.quote import LineItem, build_quote, render_en
+
+    for weight in (650, 3000):  # エアパケットと EMS の両方
+        text = render_en(build_quote([LineItem("Item", 39600, weight)]))
+        leaked = [c for c in text if "぀" <= c <= "ヿ" or "一" <= c <= "鿿"]
+        assert not leaked, f"{weight}g の文面に日本語: {leaked}"
+
+
 def test_site_carries_the_legal_disclosure(tmp_path):
     """特商法表記はフッタに必ず出る。**掲載0件でも出る**。
 

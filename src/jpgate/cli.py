@@ -410,6 +410,46 @@ def cmd_clip(cfg: Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_quote(cfg: Config, args: argparse.Namespace) -> int:
+    """依頼1件の見積を出す。**`run` には入れない**(人が叩くコマンド)。
+
+    商品は `価格:重量g:名前` を並べて渡す。名前は省略できる。
+      python -m jpgate quote 3080:250:RG Exia 5280:400
+
+    URL から価格を引かないのは意図的。**客が欲しい物が掲載中とは限らない**
+    (在庫切れ・他店・中古)ので、価格は毎回目で見て入れる。自動で引くと、
+    引けなかったときに黙って古い値で見積もる事故が起きる。
+    """
+    from .quote import LineItem, QuoteError, build_quote, render_en, render_ja
+
+    items: list[LineItem] = []
+    for raw in args.items:
+        parts = raw.split(":", 2)
+        if len(parts) < 2:
+            print(f"× 形式が違います: {raw!r}  (価格:重量g[:名前])")
+            return 2
+        try:
+            price, weight = int(parts[0]), int(parts[1])
+        except ValueError:
+            print(f"× 価格と重量は整数で: {raw!r}")
+            return 2
+        name = parts[2] if len(parts) > 2 else f"Item {len(items) + 1}"
+        items.append(LineItem(name=name, price_jpy=price, weight_g=weight))
+
+    try:
+        q = build_quote(items, duty_rate=args.duty_rate)
+    except QuoteError as exc:
+        print(f"× {exc}")
+        return 1
+
+    print(render_ja(q))
+    print()
+    print("---- ここから下を客に貼る ----")
+    print()
+    print(render_en(q))
+    return 0
+
+
 def cmd_run(cfg: Config, args: argparse.Namespace) -> int:
     rc = cmd_scan(cfg, args)
     cmd_notify(cfg, args)
@@ -446,10 +486,21 @@ def main(argv: list[str] | None = None) -> int:
         ("xqueue", cmd_xqueue),
         ("clip", cmd_clip),
         ("readiness", cmd_readiness),
+        ("quote", cmd_quote),
         ("run", cmd_run),
     ):
         parsers[name] = sub.add_parser(name, parents=[common])
         parsers[name].set_defaults(func=fn)
+    parsers["quote"].add_argument(
+        "items", nargs="+", help="価格:重量g[:名前] を商品の数だけ並べる"
+    )
+    parsers["quote"].add_argument(
+        "--duty-rate",
+        type=float,
+        default=None,
+        help="関税率を実測値で指定する（例 0.043）。省略すると暫定10%%で計算し、"
+        "客向けの文面に「見込み」の注記が付く",
+    )
     parsers["clip"].add_argument(
         "--limit", type=int, default=None, help="1本に入れる商品数（既定は config の clip.max_items）"
     )
