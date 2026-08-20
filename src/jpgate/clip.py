@@ -297,7 +297,9 @@ def caption(cards: list[Card], cfg: Config, today: date | None = None) -> str:
     tags = dict.fromkeys([t for c in cards for t in c.hashtags] + list(_TIKTOK_TAGS))
     lines += [
         "",
-        f"We're in Japan and we order these for you → {domain}",
+        # 説明欄でURLは押せないので、押せる場所（プロフィール）を名指しする。
+        # ドメインも併記して、打つ人と押す人の両方を拾う。
+        f"We're in Japan and we order these for you → {domain} (link in bio)",
         "",
         " ".join(tags),
     ]
@@ -381,6 +383,8 @@ body { background:$ink }
 .sub { font-size:40px; color:$muted; line-height:1.35 }
 .cta { font-size:44px; font-weight:800; color:$paper; background:$verm;
        padding:22px 44px; border-radius:22px }
+/* ドメインの添え物。同じ大きさにすると主役が2つになって、どちらも読まれない。 */
+.bio { font-size:32px; color:$muted; margin-top:-14px }
 """
 ).substitute(w=WIDTH, h=HEIGHT, ink=INK, paper=PAPER, verm=VERMILION, muted=MUTED)
 
@@ -440,10 +444,12 @@ def _item_html(card: Card, index: int, total: int, cfg: Config) -> str:
 
 
 def _outro_html(cfg: Config) -> str:
-    """最後の1枚はドメインだけを大きく出す。
+    """最後の1枚はドメインを大きく、その下に「Link in bio」。
 
-    「Link in bio」を主役にしていたが、プロフィールを開かせる一手間が増える
-    だけで、覚えて打てるドメインのほうが強い。
+    主役はドメインのまま。「Link in bio」を主役にするとプロフィールを開かせる
+    一手間が要るうえ、覚えて打てるドメインのほうが後から効く。ただし
+    **TikTok の説明欄でURLは押せない**ので、押せる唯一の場所がプロフィール
+    リンクだという事実は添えておく。打つ人と押す人の両方を拾う。
     """
     icon = _icon_data_uri()
     img = f'<img src="{icon}">' if icon else ""
@@ -452,7 +458,9 @@ def _outro_html(cfg: Config) -> str:
         f'<div class="card"><div class="mid">{img}'
         '<div class="sub">You cannot order these from outside Japan.</div>'
         "<div class=\"big\">We're in Japan.<br>We order<br>it for you.</div>"
-        f'<div class="cta">{html_mod.escape(domain)}</div></div></div>'
+        f'<div class="cta">{html_mod.escape(domain)}</div>'
+        '<div class="bio">— or tap the link in our bio</div>'
+        "</div></div>"
     )
 
 
