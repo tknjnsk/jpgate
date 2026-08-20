@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import html
 import json
+import math
 import sqlite3
 from collections import Counter, defaultdict
 from dataclasses import dataclass
@@ -449,6 +450,67 @@ def select_diverse(
     return ordered
 
 
+#: カテゴリ → eBay US の「japan exclusive」出品の中央価格(USD)。
+#:
+#: 2026-08-20 に eBay Browse API で実測(KujiRadar の keyset)。**出品価格で
+#: あって落札額ではない**(落札額は Marketplace Insights の申請が要る)ので、
+#: 水準の比較にしか使わない。
+#:
+#: 意味するのは「海外の転売業者がその帯でいくらの値を付けているか」。
+#: 売れないものを在庫として並べ続ける業者はいないので、需要の代理になる。
+#: ただし**代理であって需要そのものではない**。X に貼り始めて実際の反応が
+#: 取れたら、この表ではなくそちらで並べ替えること。
+_EBAY_MEDIAN_USD = {
+    "Gunpla": 63,
+    "Figures": 79,  # 魂ウェブ商店の掲載24%が仮面ライダーで、単価は全IP中トップ
+    "Trading Cards": 47,
+    "Pokemon": 28,
+}
+#: 上の値を1前後に均すための基準。中央値$50をだいたい1.0にする。
+_EBAY_BASELINE_USD = 50
+
+
+def score_interest(
+    row: sqlite3.Row,
+    verdict: GateVerdict,
+    category: str,
+    avoid_category: str | None = None,
+) -> float:
+    """「1日1件だけ貼るならどれか」の点数。**大きいほど貼る価値がある**。
+
+    1日1件に絞ると、選抜が投稿の質そのものになる。カテゴリ持ち回り
+    (`select_diverse`)は10件並べるための規則で、1件選ぶ用途では
+    「一番いいもの」を落として2番目を拾いうる。
+
+    点数は**測った事実だけ**で組む。内訳は次の4つ:
+
+      抽選か         : 応募は1アカウント1口。**転送業者でもスケールしない**
+                       唯一の関門で、これがこの事業の核心そのもの
+      転送業者に勝てるか: `beats_forwarder`。ただし根拠は弱い(gates.py 参照)
+      値段           : 高いほど話題になるが、効きは頭打ちなので対数で入れる
+      カテゴリの相場  : eBay で実測した海外の値付け水準
+
+    `avoid_category` は前回貼ったカテゴリ。同じ帯が続くのを避ける
+    (1日1件だと連日同じジャンルは「ガンプラbot」に見える)。
+
+    **この式は仮説であって計測ではない。** X の反応が取れたら、
+    重みを勘で調整するのではなく実データに差し替えること。
+    """
+    score = 0.0
+    if row["status"] == STATUS_LOTTERY:
+        score += 3.0
+    if verdict.exclusive_keys:
+        score += 1.0
+    price = row["price_jpy"] or 0
+    if price > 0:
+        score += math.log10(price)
+    if category in _EBAY_MEDIAN_USD:
+        score += _EBAY_MEDIAN_USD[category] / _EBAY_BASELINE_USD
+    if avoid_category and category == avoid_category:
+        score -= 2.0
+    return score
+
+
 def _gate_line(row: sqlite3.Row, gate: str) -> str:
     """「なぜ買えないか」の一文。**商品ごとに中身が変わること**が要件。
 
@@ -482,13 +544,30 @@ def build_x_posts(
     limit: int = 10,
     classifier: Classifier | None = None,
     exclude: set[tuple[str, str]] | None = None,
+    avoid_category: str | None = None,
 ) -> list[XPost]:
     """X に手で貼る投稿文を1件ずつ作る。ゲートが確定しているものだけ。
 
-    並べ替えと除外は `select_diverse` が持つ（動画側と同じ規則で選ぶため）。
+    **1日1件しか貼らない前提**なので、選抜そのものが投稿の質になる。
+    並び順は `score_interest`（抽選か・値段・海外相場）で決める。
+    `avoid_category` に前回貼ったカテゴリを渡すと、同じ帯の連投を避ける。
     """
     classifier = classifier or Classifier({})
-    ordered = select_diverse(rows, classifier, limit, exclude)
+    # 候補を広めに集めてから**点数順**に並べ替える。カテゴリ持ち回りは
+    # 10件並べるための規則なので、1件だけ選ぶ用途では一番いいものを
+    # 落として2番目を拾いうる。
+    candidates = select_diverse(rows, classifier, max(limit, 8), exclude)
+    scored: list[tuple[float, sqlite3.Row]] = []
+    for row in candidates:
+        verdict = evaluate(row_to_item(row), gates_by_source.get(row["source"], []))
+        if not verdict.sellable:
+            continue
+        category = classifier.classify(row["title"], row["source"]).category
+        scored.append(
+            (score_interest(row, verdict, category, avoid_category), row)
+        )
+    # 同点は元の順（新着順）で決める。安定させないと毎回結果が揺れる。
+    ordered = [r for _, r in sorted(scored, key=lambda t: -t[0])]
 
     out: list[XPost] = []
     for row in ordered:

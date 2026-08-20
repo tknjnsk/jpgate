@@ -262,6 +262,20 @@ class Store:
             (_now()[:10],),
         ).fetchone()[0]
 
+    def last_x_sent_title(self) -> str | None:
+        """直近に X 下書きを送った商品のタイトル。無ければ None。
+
+        カテゴリを直接持たないのは、分類規則(`lines.yaml`)を変えたときに
+        過去の記録と食い違うため。**タイトルは事実、カテゴリは解釈**なので、
+        事実のほうを保存して毎回引き直す。
+        """
+        row = self.db.execute(
+            "SELECT i.title FROM x_posts_sent x JOIN items i"
+            "  ON i.source = x.source AND i.item_id = x.item_id"
+            " ORDER BY x.sent_at DESC LIMIT 1"
+        ).fetchone()
+        return row["title"] if row else None
+
     def mark_x_sent(self, keys: list[tuple[str, str]]) -> None:
         """送信済みにする. **送信が成功してから呼ぶこと**.
 

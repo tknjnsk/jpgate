@@ -703,6 +703,48 @@ def test_x_queue_file_still_shows_everything(tmp_path):
     store.close()
 
 
+def _row(db, item_id, status="ON_SALE", price=1000, title="Item", icons="[]"):
+    return db.execute(
+        "SELECT ? AS source, ? AS item_id, ? AS shop, ? AS title, ? AS url,"
+        " ? AS price_jpy, ? AS image, ? AS summary, ? AS icons,"
+        " ? AS ship_month, ? AS status",
+        ("p-bandai", item_id, "hobby", title, f"https://x/{item_id}", price,
+         None, "", icons, None, status),
+    ).fetchone()
+
+
+def test_score_prefers_lotteries_then_price():
+    """1日1件に絞ると**選抜が投稿の質そのもの**になる。順序を固定する。
+
+    抽選を最上位に置くのは、応募が1アカウント1口で**転送業者でも
+    スケールしない**唯一の関門だから。この事業の核心そのものなので、
+    ここが2番手に落ちる並べ替えは間違い。
+    """
+    import sqlite3
+
+    from jpgate.gates import GateVerdict
+    from jpgate.publish import score_interest
+
+    db = sqlite3.connect(":memory:")
+    db.row_factory = sqlite3.Row
+    plain = GateVerdict(keys=("G2_JP_ADDRESS",), unknown=False, evidence={})
+
+    lottery = score_interest(_row(db, "1", "LOTTERY_OPEN", 3000), plain, "Gunpla")
+    normal = score_interest(_row(db, "2", "ON_SALE", 3000), plain, "Gunpla")
+    assert lottery > normal
+
+    # 同じ条件なら高いほうが上。ただし対数なので差は頭打ちになる。
+    cheap = score_interest(_row(db, "3", "ON_SALE", 1000), plain, "Gunpla")
+    rich = score_interest(_row(db, "4", "ON_SALE", 100000), plain, "Gunpla")
+    assert rich > cheap
+    assert rich - cheap < 3.0
+
+    # 前回と同じカテゴリは下がる（連日同じジャンルは「ガンプラbot」に見える）。
+    assert score_interest(
+        _row(db, "5", "ON_SALE", 3000), plain, "Gunpla", avoid_category="Gunpla"
+    ) < normal
+
+
 def test_x_posts_do_not_repeat_the_same_cta():
     """CTA は先頭の1本だけ。**全部に付けると宣伝botに見える**。
 

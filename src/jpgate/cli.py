@@ -347,6 +347,11 @@ def cmd_xqueue(cfg: Config, args: argparse.Namespace) -> int:
         # 1日の残り枠。**生成量ではなく貼れる量に合わせる**。
         # 毎時走らせると1回あたりの上限だけでは1日24倍まで積み上がり、
         # 手で貼りきれない下書きが Discord に溜まる(実際にそうなった)。
+        classifier = Classifier.load(cfg.lines_path)
+        # 前回貼ったカテゴリ。1日1件だと連日同じジャンルは「ガンプラbot」に見える。
+        last = store.last_x_sent_title()
+        avoid = classifier.classify(last).category if last else None
+
         remaining = cfg.max_x_posts_per_day - store.x_sent_today()
         if remaining <= 0:
             print(f"本日の上限 {cfg.max_x_posts_per_day} 件に達しています")
@@ -358,8 +363,9 @@ def cmd_xqueue(cfg: Config, args: argparse.Namespace) -> int:
             glossary,
             cfg,
             limit=min(cfg.max_x_posts_per_run, remaining),
-            classifier=Classifier.load(cfg.lines_path),
+            classifier=classifier,
             exclude=store.x_sent_keys(),
+            avoid_category=avoid,
         )
         if not posts:
             print("未送信の下書きなし")
