@@ -698,8 +698,39 @@ def test_x_queue_file_still_shows_everything(tmp_path):
     store.mark_x_sent([("p-bandai", "1"), ("p-bandai", "2")])
 
     text = render_x_posts(store.open_items(), {}, Glossary({}), cfg)
-    assert text.count("Japan only") == 2
+    # 本文の言い回しは商品ごとに変わるので、件数は商品URLで数える。
+    assert text.count("/item/item-") == 2
     store.close()
+
+
+def test_x_posts_do_not_repeat_the_same_cta():
+    """CTA は先頭の1本だけ。**全部に付けると宣伝botに見える**。
+
+    以前は全件に「We're in Japan: <招待リンク>」が入り、どの投稿も
+    リンク＋宣伝文句の同じ形になった。19件並べたら連投できる内容ではない、
+    というのが実際の指摘。勧誘はプロフィール欄が持っている。
+    """
+    import sqlite3
+
+    from jpgate import config as cm
+    from jpgate.publish import build_x_posts
+
+    db = sqlite3.connect(":memory:")
+    db.row_factory = sqlite3.Row
+    rows = [
+        db.execute(
+            "SELECT ? AS source, ? AS item_id, ? AS shop, ? AS title, ? AS url,"
+            " ? AS price_jpy, ? AS image, ? AS summary, ? AS icons,"
+            " ? AS ship_month, ? AS status",
+            ("p-bandai", str(n), "hobby", f"Item {n}", f"https://x/{n}", 1000,
+             None, "", '["ITEM_LOT_SALES"]', None, "LOTTERY_OPEN"),
+        ).fetchone()
+        for n in range(4)
+    ]
+    posts = build_x_posts(rows, {}, Glossary({}), cm.load(), limit=4)
+    assert len(posts) >= 2
+    with_cta = [p for p in posts if "We're in Japan" in p.text]
+    assert len(with_cta) == 1
 
 
 def test_x_draft_webhook_is_separate_from_the_drops_webhook(monkeypatch):

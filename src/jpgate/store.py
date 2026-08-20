@@ -251,6 +251,17 @@ class Store:
             for r in self.db.execute("SELECT source, item_id FROM x_posts_sent")
         }
 
+    def x_sent_today(self) -> int:
+        """今日すでに送った X 下書きの数。
+
+        1回あたりの上限だけでは1日の総量が縛れない（毎時走らせれば24倍になる）。
+        投稿の総量を決めるのは「1日に何回 X に貼るか」なので、そちらで数える。
+        """
+        return self.db.execute(
+            "SELECT COUNT(*) FROM x_posts_sent WHERE substr(sent_at, 1, 10) = ?",
+            (_now()[:10],),
+        ).fetchone()[0]
+
     def mark_x_sent(self, keys: list[tuple[str, str]]) -> None:
         """送信済みにする. **送信が成功してから呼ぶこと**.
 

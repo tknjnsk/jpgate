@@ -344,12 +344,20 @@ def cmd_xqueue(cfg: Config, args: argparse.Namespace) -> int:
             print("! 掲載できる商品が0件。走査が壊れている可能性があります")
             return 1
 
+        # 1日の残り枠。**生成量ではなく貼れる量に合わせる**。
+        # 毎時走らせると1回あたりの上限だけでは1日24倍まで積み上がり、
+        # 手で貼りきれない下書きが Discord に溜まる(実際にそうなった)。
+        remaining = cfg.max_x_posts_per_day - store.x_sent_today()
+        if remaining <= 0:
+            print(f"本日の上限 {cfg.max_x_posts_per_day} 件に達しています")
+            return 0
+
         posts = build_x_posts(
             rows,
             gates,
             glossary,
             cfg,
-            limit=cfg.max_x_posts_per_run,
+            limit=min(cfg.max_x_posts_per_run, remaining),
             classifier=Classifier.load(cfg.lines_path),
             exclude=store.x_sent_keys(),
         )

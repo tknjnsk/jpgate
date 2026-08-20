@@ -449,6 +449,31 @@ def select_diverse(
     return ordered
 
 
+def _gate_line(row: sqlite3.Row, gate: str) -> str:
+    """「なぜ買えないか」の一文。**商品ごとに中身が変わること**が要件。
+
+    ここは以前 "Japan only — needs a {gate}." の1種類しか無かった。関門が
+    実質2種類しかない以上、キュー19件のうち19件が同じ文になる。X は同一・
+    類似の内容の反復投稿を規約で禁じているし、規約以前に**並べた瞬間に
+    botだと分かる**。
+
+    変化は飾りではなく**その商品の事実**から作る。抽選なら1人1口という制約、
+    予約なら発送月、在庫不明ならそれ自体。文言をランダムに振ると
+    「言っていることが毎回違う」だけで、しかも嘘になりうる。
+    必ず row の中身に対応させること。
+    """
+    status = row["status"]
+    if status == STATUS_LOTTERY:
+        # 抽選の本当のきつさは関門より「1人1口」のほう。応募ページに明記がある。
+        return f"Lottery — one entry per account, and the account needs a {gate}."
+    if status == STATUS_RESERVATION and row["ship_month"]:
+        return f"Pre-order, ships {row['ship_month']}. Needs a {gate}."
+    if status == STATUS_LISTED:
+        # 在庫が観測できない元。売っていると断定しない。
+        return f"Listed in Japan only — stock unconfirmed. Needs a {gate}."
+    return f"Japan only — needs a {gate}."
+
+
 def build_x_posts(
     rows: list[sqlite3.Row],
     gates_by_source: dict[str, list[SourceGate]],
@@ -492,6 +517,10 @@ def build_x_posts(
                 t for t in (line.hashtag, SOURCE_HASHTAG.get(row["source"], "")) if t
             )
         )
+        # CTA は**先頭の1本だけ**。全部に「We're in Japan」を付けていたため、
+        # どの投稿も リンク＋宣伝文句 の同じ形になり、並べると宣伝botに見えた。
+        # 勧誘はプロフィール欄が持っている。ここは商品の話をする。
+        cta = f"\nWe're in Japan: {cfg.contact_url}" if not out else ""
         out.append(
             XPost(
                 source=row["source"],
@@ -499,8 +528,8 @@ def build_x_posts(
                 text=(
                     f"{STATUS_LABEL.get(row['status'], ('On sale', ''))[0]}:"
                     f" {title} {price}\n"
-                    f"Japan only — needs a {gate}.\n{row['url']}\n"
-                    f"We're in Japan: {cfg.contact_url}\n{tags}"
+                    f"{_gate_line(row, gate)}\n{row['url']}"
+                    f"{cta}\n{tags}"
                 ),
             )
         )

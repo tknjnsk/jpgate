@@ -83,7 +83,11 @@ class Config:
 
     #: 1回に Discord へ送る X 下書きの上限。初回は掲載中の商品が丸ごと
     #: 対象になるので、これが無いと初回だけ大量に飛ぶ。
-    max_x_posts_per_run: int = 3
+    max_x_posts_per_run: int = 1
+    #: **1日あたり**の上限。1回あたりの上限だけでは総量が縛れない
+    #: (毎時走らせれば24倍になる)。X に貼れるのは人の手なので、
+    #: 生成量ではなく**貼れる量**に合わせる。
+    max_x_posts_per_day: int = 2
 
     #: 生成した縦動画の置き場。Discord へ送ったあとも手元に残す
     #: （TikTok へは手で上げるので、送信に失敗しても貼れる必要がある）。
@@ -184,6 +188,7 @@ def load(path: Path | str | None = None) -> Config:
         max_clip_items=raw.get("clip", {}).get("max_items", 5),
         max_notify_per_run=raw.get("notify", {}).get("max_per_run", 20),
         min_translation_coverage=raw.get("notify", {}).get("min_translation_coverage", 0.5),
+        max_x_posts_per_day=raw.get("x", {}).get("max_per_day", 2),
         notify_forum=bool(raw.get("notify", {}).get("forum", False)),
         notify_forum_tags={
             str(k): str(v)
