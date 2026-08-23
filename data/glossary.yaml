@@ -289,3 +289,40 @@
 "セレクション": "Selection"
 "周年記念": "Anniversary"
 "プラモ": "Plastic Model"
+
+# --- 2026-08-23 追加(3巡目): eBayの実出品で綴りを確認したもの ---
+#
+# **正解は公式名ではなく、海外の出品者が実際に書いている綴り。**
+# eBay Browse API で候補を検索し、返ってきた商品名にその綴りが実際に
+# 入っている割合で採否を決めた（出品数だけ見ると eBay が語を落とすので、
+# "mat" が400万件のような無意味な数字になる）。一致率を併記する。
+
+# ポケモンセンター
+"ポケピース": "PokePeace"          # 一致98%  "Pokemon Center Japan PokePeace Plusle Plush"
+                                   # 公式英名は "Pokémon Peaceful Place" だが、
+                                   # 出品も検索も PokePeace のほうが厚い
+"サガラバッジ": "Sagara Badge"      # 一致100% "Snorlax Sagara Badge Pokemon Center Tokyo 30th"
+                                   # 相良刺繍のバッジ。出品者もそのまま Sagara と書く
+"サガラ": "Sagara"
+"おやすみ": "OYASUMI"              # 一致100% "Snorlax & Pikachu Sleep Motchiri OYASUMI Plush"
+"切り絵": "Kirie"                  # 一致100% "Pokemon Kirie Series Acrylic Key Chain"
+"喫茶": "Cafe"                     # 一致90%
+
+# ダンボール戦機（バンダイのプラモ）
+"ハイパーファンクション": "Hyper Function"   # 一致48%（"Bandai Hyper Function LBX Odin"）
+                                              # 語自体は平凡だが、これが正式なライン名
+"ダンボール戦機": "Little Battlers Experience"
+
+# ポケモン（追加分。英語名は The Pokémon Company の公式表記）
+"ヤドン": "Slowpoke"
+"プクリン": "Wigglytuff"
+"エモンガ": "Emolga"
+"マホイップ": "Alcremie"
+"ワッカネズミ": "Tandemaus"
+"プラスル": "Plusle"
+"マイナン": "Minun"
+"ヌメラ": "Goomy"
+
+# 確信が持てず**あえて足さなかった**もの:
+#   陶飾り  → "Ceramic Ornament" は一致32%。当たらない綴りを入れるくらいなら
+#             日本語のまま残す（残っても事故にはならないが、誤訳は検索に当たらない）
