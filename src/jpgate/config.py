@@ -64,6 +64,19 @@ class Config:
     #: 訳出率がこれ未満なら「原題のまま」注記を付ける。
     min_translation_coverage: float = 0.5
 
+    #: 1回の実行で相場を引き直す件数。eBay の呼び出し枠を守るための上限。
+    #: 相場は1時間で動くものではないので、少しずつ古い順に回せばよい。
+    max_price_checks_per_run: int = 25
+    #: 相場を引き直す間隔（日）。
+    price_stale_days: int = 14
+    #: 相場を引くときに要求する訳出率。**表示用より厳しくする**。
+    #:
+    #: `min_translation_coverage` は「読めるか」の敷居。相場に必要なのは
+    #: 「特定できるか」で、別の要件。実測で "ガンダムアストレイ
+    #: ゴールドフレーム" が訳出率54%で通り、未訳の「ゴールドフレーム」＝
+    #: **まさに商品を区別する語**が落ちて、赤と金が同じ相場になった。
+    price_min_coverage: float = 0.8
+
     #: 通知先がフォーラムチャンネルか。
     #:
     #: **間違えると通知が全部落ちる。** フォーラムに `thread_name` 無しで
@@ -99,6 +112,17 @@ class Config:
     @property
     def discord_webhook(self) -> str | None:
         return os.environ.get("JPGATE_DISCORD_WEBHOOK")
+
+    @property
+    def ebay_keys(self) -> tuple[str, str] | None:
+        """eBay の Production keyset。**リポジトリは公開なので環境変数のみ**。
+
+        未設定なら None を返し、呼び出し側は相場の取得を諦める。
+        価格が無くてもサイトは成立するので、ここで落とさない。
+        """
+        cid = os.environ.get("JPGATE_EBAY_CLIENT_ID", "")
+        secret = os.environ.get("JPGATE_EBAY_CLIENT_SECRET", "")
+        return (cid, secret) if cid and secret else None
 
     @property
     def x_queue_webhook(self) -> str | None:
@@ -189,6 +213,9 @@ def load(path: Path | str | None = None) -> Config:
         max_notify_per_run=raw.get("notify", {}).get("max_per_run", 20),
         min_translation_coverage=raw.get("notify", {}).get("min_translation_coverage", 0.5),
         max_x_posts_per_day=raw.get("x", {}).get("max_per_day", 1),
+        max_price_checks_per_run=raw.get("prices", {}).get("max_per_run", 25),
+        price_stale_days=raw.get("prices", {}).get("stale_days", 14),
+        price_min_coverage=raw.get("prices", {}).get("min_coverage", 0.8),
         notify_forum=bool(raw.get("notify", {}).get("forum", False)),
         notify_forum_tags={
             str(k): str(v)

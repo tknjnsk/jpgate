@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .models import (
@@ -100,6 +100,23 @@ CREATE TABLE IF NOT EXISTS clip_items_used (
     source   TEXT NOT NULL,
     item_id  TEXT NOT NULL,
     used_at  TEXT NOT NULL,
+    PRIMARY KEY (source, item_id)
+);
+
+-- eBay US の相場。**「日本ではいくら / 海外ではいくら」を出すため**。
+--
+-- median_usd が NULL の行は「引いたが確信が持てなかった」記録。
+-- **消さずに残す**。消すと毎回同じ商品を引き直して、API の呼び出し枠を
+-- 同定できない商品で使い切る。checked_at があるので再挑戦の間隔も測れる。
+CREATE TABLE IF NOT EXISTS ebay_prices (
+    source     TEXT NOT NULL,
+    item_id    TEXT NOT NULL,
+    median_usd REAL,
+    low_usd    REAL,
+    high_usd   REAL,
+    sample_n   INTEGER,
+    confidence REAL,
+    checked_at TEXT NOT NULL,
     PRIMARY KEY (source, item_id)
 );
 
@@ -275,6 +292,60 @@ class Store:
             " ORDER BY x.sent_at DESC LIMIT 1"
         ).fetchone()
         return row["title"] if row else None
+
+    def prices(self) -> dict[tuple[str, str], sqlite3.Row]:
+        """(source, item_id) -> 相場の行。**NULL の行も含む**。
+
+        呼び出し側は median_usd が None かどうかで「出さない」を判断する。
+        行が無い＝まだ引いていない、と区別できるようにしてある。
+        """
+        return {
+            (r["source"], r["item_id"]): r
+            for r in self.db.execute("SELECT * FROM ebay_prices")
+        }
+
+    def price_check_targets(self, keys: list[tuple[str, str]], stale_days: int,
+                            limit: int) -> list[tuple[str, str]]:
+        """相場を引き直すべき商品。未取得を優先し、次に古いものから。
+
+        全件を毎回引くと eBay の呼び出し枠を使い切るうえ、相場は1時間で
+        動くものでもない。**古い順に少しずつ**回す。
+        """
+        known = {
+            (r["source"], r["item_id"]): r["checked_at"]
+            for r in self.db.execute("SELECT source, item_id, checked_at FROM ebay_prices")
+        }
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(days=stale_days)
+        ).isoformat(timespec="seconds")
+        fresh = [k for k in keys if k not in known]
+        stale = sorted(
+            (k for k in keys if k in known and known[k] < cutoff),
+            key=lambda k: known[k],
+        )
+        return (fresh + stale)[:limit]
+
+    def save_price(self, source: str, item_id: str, quote) -> None:
+        """相場を記録する。**確信が持てなかった場合も記録する**（NULL で）。
+
+        `quote` は `prices.PriceQuote` か None。
+        """
+        self.db.execute(
+            "INSERT OR REPLACE INTO ebay_prices"
+            " (source, item_id, median_usd, low_usd, high_usd, sample_n,"
+            "  confidence, checked_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                source, item_id,
+                quote.median_usd if quote else None,
+                quote.low_usd if quote else None,
+                quote.high_usd if quote else None,
+                quote.sample_n if quote else None,
+                quote.confidence if quote else None,
+                _now(),
+            ),
+        )
+        self.db.commit()
 
     def mark_x_sent(self, keys: list[tuple[str, str]]) -> None:
         """送信済みにする. **送信が成功してから呼ぶこと**.

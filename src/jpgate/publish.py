@@ -106,8 +106,10 @@ def render_site(
     cfg: Config,
     closed_rows: list[sqlite3.Row] | None = None,
     classifier: Classifier | None = None,
+    prices: dict[tuple[str, str], sqlite3.Row] | None = None,
 ) -> str:
     classifier = classifier or Classifier({})
+    prices = prices or {}
     by_month: dict[str, list[tuple[sqlite3.Row, GateVerdict]]] = defaultdict(list)
     gated = 0
     cat_counts: Counter[str] = Counter()
@@ -149,7 +151,12 @@ def render_site(
         )
         parts.append('<ul class="grid">')
         for row, verdict in entries:
-            parts.append(_card(row, verdict, glossary, classifier=classifier))
+            parts.append(
+                _card(
+                    row, verdict, glossary, classifier=classifier,
+                    price_row=prices.get((row["source"], row["item_id"])),
+                )
+            )
         parts.append("</ul></section>")
 
     if closed_rows:
@@ -343,6 +350,7 @@ def _card(
     lottery: bool = False,
     cfg: Config | None = None,
     classifier: Classifier | None = None,
+    price_row: sqlite3.Row | None = None,
 ) -> str:
     title_en = html.escape(glossary.render(row["title"]))
     status_label, status_cls = STATUS_LABEL.get(row["status"], ("On sale", "on"))
@@ -394,7 +402,36 @@ def _card(
         f'<div><span class="tag {status_cls}">{status_label}</span>{line_badge}'
         f'<a class="name" href="{html.escape(row["url"])}">{title_en}</a>'
         f'<p class="price">{price} · {html.escape(row["shop"])}</p>'
+        f"{_ebay_line(price_row, row['price_jpy'])}"
         f'<ul class="gates">{badges}</ul>{extra}</div></li>'
+    )
+
+
+#: 見積で US$100 の敷居判定に使っているのと同じ換算。**表示用の目安**。
+_USD_JPY = 150
+
+
+def _ebay_line(price_row: sqlite3.Row | None, price_jpy: int | None) -> str:
+    """「日本ではいくら / eBayではいくら」の一行。**無ければ何も出さない**。
+
+    出す数字は**出品中の希望価格の幅**であって落札額ではない。
+    そう書かずに出すと「その値段で売れる」と読まれるが、それは保証できない
+    (落札額には Marketplace Insights API の申請が要る)。
+
+    倍率も出す。海外の客が本当に知りたいのは値段そのものではなく
+    **「自分の国で買うといくら損か」**で、差額がそのまま代行の価値になる。
+    """
+    if price_row is None or price_row["low_usd"] is None:
+        return ""
+    lo, hi = price_row["low_usd"], price_row["high_usd"]
+    gap = ""
+    if price_jpy:
+        ratio = (price_row["median_usd"] * _USD_JPY) / price_jpy
+        if ratio >= 1.2:
+            gap = f' <strong>{ratio:.1f}× Japan price</strong>'
+    return (
+        f'<p class="ebay">eBay US asking ${lo:,.0f}–${hi:,.0f}'
+        f'<span class="n">n={price_row["sample_n"]}</span>{gap}</p>'
     )
 
 
@@ -749,6 +786,9 @@ letter-spacing:.06em;vertical-align:middle}
 line-height:1.35;overflow-wrap:anywhere}
 .name:hover{color:var(--acc)}
 .price{color:var(--mut);font-size:.85rem;margin:.3rem 0}
+.ebay{color:var(--mut);font-size:.8rem;margin:.15rem 0 0}
+.ebay strong{color:var(--acc)}
+.ebay .n{opacity:.6;font-size:.72rem;margin-left:.4rem}
 .gates{list-style:none;padding:0;margin:.4rem 0 0;font-size:.78rem}
 .gates li{color:var(--acc);font-weight:600}
 .gates li:before{content:"\\1F6AB  "}

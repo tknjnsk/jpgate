@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 import sys
 from datetime import date, datetime
 from pathlib import Path
@@ -306,7 +307,8 @@ def cmd_publish(cfg: Config, args: argparse.Namespace) -> int:
         classifier = Classifier.load(cfg.lines_path)
         index, queue = write(
             cfg,
-            render_site(rows, gates, glossary, cfg, closed_rows=closed, classifier=classifier),
+            render_site(rows, gates, glossary, cfg, closed_rows=closed,
+                        classifier=classifier, prices=store.prices()),
             render_x_posts(rows, gates, glossary, cfg, classifier=classifier),
         )
         print(f"- {index} (掲載 {len(rows)}件 / 終了 {len(closed)}件)")
@@ -458,6 +460,54 @@ def cmd_clip(cfg: Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_prices(cfg: Config, args: argparse.Namespace) -> int:
+    """eBay US の相場を少しずつ引き直す。
+
+    **失敗しても 0 を返す**。価格が無くてもサイトは成立するので、
+    相場の取得で走査や公開のパイプライン全体を落とさない。
+    """
+    from .prices import EbayClient, quote
+
+    keys = cfg.ebay_keys
+    if not keys:
+        print("! JPGATE_EBAY_CLIENT_ID / _SECRET が未設定。相場は引きません")
+        return 0
+
+    store = Store(cfg.db_path)
+    glossary = Glossary.load(cfg.glossary_path)
+    try:
+        rows = {(r["source"], r["item_id"]): r for r in store.open_items()}
+        targets = store.price_check_targets(
+            list(rows), cfg.price_stale_days, cfg.max_price_checks_per_run
+        )
+        if not targets:
+            print("引き直す商品なし")
+            return 0
+
+        client = EbayClient(*keys)
+        found = 0
+        for source, item_id in targets:
+            row = rows[(source, item_id)]
+            title_en = glossary.render(row["title"])
+            q = quote(
+                client,
+                title_en,
+                glossary.coverage(row["title"]),
+                cfg.price_min_coverage,
+            )
+            # 確信が持てなかった場合も記録する。消すと毎回引き直して
+            # 同定できない商品で呼び出し枠を使い切る。
+            store.save_price(source, item_id, q)
+            if q:
+                found += 1
+            if not args.dry_run:
+                time.sleep(0.3)  # eBay に連打しない
+        print(f"{len(targets)} 件を照会、うち相場が確定 {found} 件")
+    finally:
+        store.close()
+    return 0
+
+
 def cmd_quote(cfg: Config, args: argparse.Namespace) -> int:
     """依頼1件の見積を出す。**`run` には入れない**(人が叩くコマンド)。
 
@@ -501,6 +551,7 @@ def cmd_quote(cfg: Config, args: argparse.Namespace) -> int:
 def cmd_run(cfg: Config, args: argparse.Namespace) -> int:
     rc = cmd_scan(cfg, args)
     cmd_notify(cfg, args)
+    cmd_prices(cfg, args)
     cmd_publish(cfg, args)
     cmd_xqueue(cfg, args)
     return rc
@@ -534,6 +585,7 @@ def main(argv: list[str] | None = None) -> int:
         ("xqueue", cmd_xqueue),
         ("clip", cmd_clip),
         ("readiness", cmd_readiness),
+        ("prices", cmd_prices),
         ("quote", cmd_quote),
         ("run", cmd_run),
     ):

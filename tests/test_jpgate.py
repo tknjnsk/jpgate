@@ -713,6 +713,99 @@ def _row(db, item_id, status="ON_SALE", price=1000, title="Item", icons="[]"):
     ).fetchone()
 
 
+# --------------------------------------------------------------------------
+# 相場: **別商品の値段を出さないこと**
+# --------------------------------------------------------------------------
+class _FakeEbay:
+    """検索結果を差し替えるだけの偽クライアント。"""
+
+    def __init__(self, hits):
+        self.hits = hits
+        self.queries = []
+
+    def search(self, query, limit=50):
+        self.queries.append(query)
+        return self.hits
+
+
+def test_grade_and_scale_are_not_evidence():
+    """"RG" と "1/144" で同定してはいけない。
+
+    RGのキットは出品名に必ず両方入るので、これで「2語一致」を満たすと
+    **別のキットを掴んでも一致率が落ちず、検知できない**。
+    実測でそうなった（RGの相場が全部$41〜$59に張り付いた）。
+    """
+    from jpgate.prices import anchors
+
+    key, narrow = anchors("RG 1/144 Freedom Gundam")
+    assert key == ["Freedom"]  # Gundam は汎用語なので特定語にしない
+    assert set(narrow) == {"RG", "1/144"}
+
+
+def test_set_code_survives_bracket_stripping():
+    """【OP-14】のセット番号は**商品を1点に特定する最強の語**。
+
+    括弧ごと落としていたため、カードゲームの相場が全部同じ幅になった。
+    """
+    from jpgate.prices import anchors
+
+    key, _ = anchors("ONE PIECE Card Game Booster Pack 蒼海の七傑【OP-14】")
+    assert "OP-14" in key
+    # 作品名や汎用語は特定語に数えない（その作品の出品すべてに入るため）。
+    assert "PIECE" not in key
+    assert "Booster" not in key
+
+
+def test_price_is_withheld_without_confidence():
+    """確信が持てないなら**出さない**。None は失敗ではなく正常な結論。
+
+    「日本で¥2,860 / eBayで$300」は儲け話ではなく、たいてい無関係な商品を
+    掴んだ証拠。客はこの数字でこちらの信用を測るので、1件外すと全部疑われる。
+    """
+    from jpgate.prices import quote
+
+    # 特定語ゼロ（グレードと縮尺しかない）→ 検索にも行かない
+    client = _FakeEbay([(50.0, "RG 1/144 Something Else")] * 10)
+    assert quote(client, "RG 1/144 Gundam", 1.0, 0.8) is None
+    assert client.queries == []
+
+    # 返ってきた商品名に特定語が入っていない → 別商品を掴んでいる
+    client = _FakeEbay([(300.0, "Completely Unrelated Item")] * 10)
+    assert quote(client, "Exia Repair Gundam", 1.0, 0.8) is None
+
+    # 件数が足りない → 相場ではない
+    client = _FakeEbay([(50.0, "Exia Repair")] * 2)
+    assert quote(client, "Exia Repair Gundam", 1.0, 0.8) is None
+
+
+def test_set_code_overrides_the_coverage_gate():
+    """訳出率は「同定できるか」の代理指標。セット番号はその直接の証拠。
+
+    代理指標を直接証拠より優先するのは順序が逆なので、番号があれば通す。
+    """
+    from jpgate.prices import quote
+
+    hits = [(20.0 + i, f"ONE PIECE OP-14 Booster Box {i}") for i in range(10)]
+    # 訳出率0.1（ほぼ日本語のまま）でも、番号があるので通る
+    assert quote(_FakeEbay(hits), "Booster Pack 蒼海の七傑【OP-14】", 0.1, 0.8)
+    # 番号が無ければ同じ訳出率では通さない
+    assert quote(_FakeEbay(hits), "Booster Pack 蒼海の七傑", 0.1, 0.8) is None
+
+
+def test_price_is_shown_as_a_range_not_a_point():
+    """点で出すと「その値段で売れる」と読まれる。それは保証できない。
+
+    同名の通常版と限定版が混ざる（実測: 小売版RGフリーダム$14 と
+    プレバン限定版$104 が同じ検索に並んだ）。
+    """
+    from jpgate.prices import quote
+
+    hits = [(float(p), "Exia Repair kit") for p in (10, 20, 30, 40, 200)]
+    q = quote(_FakeEbay(hits), "Exia Repair Gundam", 1.0, 0.8)
+    assert q is not None
+    assert q.low_usd < q.median_usd < q.high_usd
+
+
 def test_score_prefers_lotteries_then_price():
     """1日1件に絞ると**選抜が投稿の質そのもの**になる。順序を固定する。
 
