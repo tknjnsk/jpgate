@@ -143,3 +143,149 @@
 "セット": "Set"
 "版": "Ver."
 "税込": "incl. tax"
+
+# --- 2026-08-23 追加 ---
+#
+# 掲載811件のうち **87%が訳出率80%未満**で、相場の照合がそこで落ちていた
+# （25件引いて4件しか確定しない）。残っている日本語を頻度順に数えて、
+# **確信のある語だけ**を足す。当たらない綴りを推測で入れるくらいなら
+# 日本語のまま残すほうがよい（残っても事故にはならないが、誤訳は当たらない）。
+
+# 部材・仕様（ガンプラの商品名に頻出）
+"デカール": "Decal"
+"水転写式デカール": "Water Slide Decal"
+"拡張パーツ": "Expansion Parts"
+"オプションパーツ": "Option Parts"
+"換装パーツ": "Conversion Parts"
+"スケール推奨": "scale recommended"
+"スケール": "scale"
+"ユニット": "Unit"
+"装備": "Equipment"
+"仕様": "Ver."
+
+# 勢力・作品（ガンダム）
+"地球連邦軍": "Earth Federation"
+"ジオン軍": "Zeon"
+"ジオン公国軍": "Principality of Zeon"
+"ネオ・ジオン": "Neo Zeon"
+"ガンプラ": "Gunpla"
+"ベストメカコレクション": "Best Mecha Collection"
+"ベストメカ": "Best Mecha"
+
+# 装甲騎兵ボトムズ
+"スコープドッグ": "Scopedog"
+
+# ポケモン（英語名は The Pokémon Company の公式表記に合わせる）
+"ピカチュウ": "Pikachu"
+"ポッチャマ": "Piplup"
+"イーブイ": "Eevee"
+"ミミッキュ": "Mimikyu"
+"ゲンガー": "Gengar"
+"リザードン": "Charizard"
+"ヒトカゲ": "Charmander"
+"フシギダネ": "Bulbasaur"
+"ゼニガメ": "Squirtle"
+"切り絵シリーズ": "Kirie Series"
+
+# 雑貨・グッズの種別
+"カラビナ付きマスコット": "Carabiner Mascot"
+"マスコット": "Mascot"
+"カラビナ": "Carabiner"
+"チャーム": "Charm"
+"缶バッジ": "Can Badge"
+"アクリルスタンド": "Acrylic Stand"
+"アクリルキーホルダー": "Acrylic Keychain"
+"キーホルダー": "Keychain"
+"ぬいぐるみ": "Plush"
+"クリアファイル": "Clear File"
+"陶飾り": "Ceramic Ornament"
+"手ぬぐい": "Tenugui"
+
+# カード
+"プレミアムカード": "Premium Card"
+"ブースターパック": "Booster Pack"
+"スターターデッキ": "Starter Deck"
+"カードゲーム": "Card Game"
+
+# 汎用語（単体では商品を特定しないが、残ると訳出率を下げる）
+"シリーズ": "Series"
+"コレクション": "Collection"
+"スペシャル": "Special"
+"プレミアム": "Premium"
+"スーパー": "Super"
+"タイプ": "Type"
+"セット": "Set"
+"戦士": "Warrior"
+"推奨": "recommended"
+"付き": "with"
+"限定": "Exclusive"
+"完全生産限定": "Strictly Limited"
+
+# --- 2026-08-23 追加(2巡目): メカ名・キャラ名 ---
+#
+# 1巡目に汎用語を足したが**歩留まりが1件も動かなかった**。測り直したら、
+# 訳出率で落ちている商品に残っていたのは汎用語ではなく
+# **まさに商品を区別する固有名**だった（「Astray ゴールドフレーム」
+# 「フルアーマー・Unicorn」）。区別語が日本語のままだと、赤と金の
+# アストレイが同じ相場になる。優先すべきはこちら。
+
+# ガンダム: 機体名・形態
+"ストライクフリーダム": "Strike Freedom"
+"フリーダム": "Freedom"
+"デスティニー": "Destiny"
+"ジャスティス": "Justice"
+"エールストライク": "Aile Strike"
+"アストレイ": "Astray"
+"レッドフレーム": "Red Frame"
+"ゴールドフレーム": "Gold Frame"
+"ブルーフレーム": "Blue Frame"
+"アカツキ": "Akatsuki"
+"オオワシ": "Oowashi"
+"シラヌイ": "Shiranui"
+"ユニコーン": "Unicorn"
+"バンシィ・ノルン": "Banshee Norn"
+"バンシィ": "Banshee"
+"フェネクス": "Phenex"
+"フルアーマー": "Full Armor"
+"クロスボーン": "Crossbone"
+"シナンジュ": "Sinanju"
+"ハンブラビ": "Hambrabi"
+"ジェスタ": "Jesta"
+"ゲルググ": "Gelgoog"
+"ザクII": "Zaku II"
+"グフ": "Gouf"
+"ドム": "Dom"
+"エクシア": "Exia"
+"ダブルオー": "00"
+"クアンタ": "Qan[T]"
+"ウイング": "Wing"
+"フィン・ファンネル": "Fin Funnel"
+"ディアクティブモード": "Deactive Mode"
+"ミッションパック": "Mission Pack"
+"鉄血のオルフェンズ": "Iron-Blooded Orphans"
+"試作": "Prototype"
+"専用": "Custom"
+
+# 仮面ライダー
+"クウガ": "Kuuga"
+"ライジング": "Rising"
+
+# ポケモン（追加分）
+"レックウザ": "Rayquaza"
+"メガレックウザ": "Mega Rayquaza"
+"カビゴン": "Snorlax"
+"ゾロア": "Zorua"
+"ロトム": "Rotom"
+"モクロー": "Rowlet"
+"チャデス": "Poltchageist"
+"メガ": "Mega"
+"地方": "Region"
+"フォルム": "Forme"
+"ハイクラスパック": "High Class Pack"
+"ポケットバインダー": "Pocket Binder"
+
+# カード・ホビーの商品種別（追加分）
+"アーセナルベース": "Arsenal Base"
+"セレクション": "Selection"
+"周年記念": "Anniversary"
+"プラモ": "Plastic Model"

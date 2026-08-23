@@ -136,6 +136,7 @@ def render_site(
         "a Japanese phone number, a domestic address, a local payment method.</p>",
         f"<p class=\"meta\">{len(rows)} open items · {gated} with a verified Japan-only "
         f"barrier · updated {generated}</p>",
+        _market_summary(rows, prices),
         f"<p><a class=\"cta\" href=\"{html.escape(cfg.contact_url)}\">"
         "Get alerts &amp; ask us to enter for you</a></p>",
         _filter_bar(cat_counts, gated),
@@ -181,6 +182,37 @@ def render_site(
     footer.append("</footer>")
     parts.extend(footer)
     return "\n".join(parts)
+
+
+def _market_summary(
+    rows: list[sqlite3.Row], prices: dict[tuple[str, str], sqlite3.Row]
+) -> str:
+    """見出しの一行サマリ。**この事業だけが出せる数字**を先頭に置く。
+
+    「何件あるか」は誰でも書ける。うちにしか無いのは**日本の定価と海外の
+    言い値の倍率**で、それは代行の価値そのものを一言で表している。
+
+    **「落札」とは書かない。** 出しているのは出品中の希望価格で、落札額には
+    Marketplace Insights API の申請が要る。件数と平均落札額を出す相場サイトと
+    見た目は同じ形になるが、中身は別物なので同じ言葉を使ってはいけない。
+    """
+    ratios = []
+    for row in rows:
+        p = prices.get((row["source"], row["item_id"]))
+        if p is None or p["median_usd"] is None or not row["price_jpy"]:
+            continue
+        ratios.append((p["median_usd"] * _USD_JPY) / row["price_jpy"])
+    if len(ratios) < 5:
+        # 数件では「相場」と呼べない。数字が育つまで何も出さない。
+        return ""
+    ratios.sort()
+    median = ratios[len(ratios) // 2]
+    return (
+        f'<p class="stat"><strong>{median:.1f}×</strong> — what these ask overseas, '
+        f"against the Japanese price. Median across {len(ratios):,} items with "
+        f'eBay US listings. <span class="fine">Asking prices, not completed '
+        f"sales.</span></p>"
+    )
 
 
 def _business_info() -> str:
@@ -786,6 +818,9 @@ letter-spacing:.06em;vertical-align:middle}
 line-height:1.35;overflow-wrap:anywhere}
 .name:hover{color:var(--acc)}
 .price{color:var(--mut);font-size:.85rem;margin:.3rem 0}
+.stat{font-size:1rem;margin:.6rem 0 0;max-width:60ch}
+.stat strong{font-size:1.6rem;color:var(--acc)}
+.stat .fine{display:block;color:var(--mut);font-size:.78rem;margin-top:.2rem}
 .ebay{color:var(--mut);font-size:.8rem;margin:.15rem 0 0}
 .ebay strong{color:var(--acc)}
 .ebay .n{opacity:.6;font-size:.72rem;margin-left:.4rem}
