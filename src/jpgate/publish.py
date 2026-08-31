@@ -35,32 +35,22 @@ from .models import (
 )
 from .translate import Glossary
 
-#: 特定商取引法にもとづく表記。**広告を出す場所すべてに必要**なので、
-#: サイトはフッタで全ページに出す（Discord は #start-here に手で貼る）。
+#: 特定商取引法にもとづく表記。
 #:
-#: 氏名は省略できない。住所と電話は「請求があれば遅滞なく提供する」と
-#: 明示すれば省略でき、消費者庁の基準がこれを認めている。
-#: **したがってバーチャルオフィスは不要** ―― 実際に請求されてから考える。
+#: **2026-08-31 に取り下げた。** 事業を停止したので表示義務が消え、
+#: 本名と個人のメールアドレスを公開し続ける理由が無くなった（義務が
+#: 残っていない以上、得るものはスパムだけ）。
 #:
-#: ここを書き換えるときは Discord の #start-here と SOCIAL_COPY.md も
-#: 同時に直すこと。食い違うと、どちらが本物か客に判断できない。
-BUSINESS_OPERATOR = "Junsuke Takano"
-BUSINESS_CONTACT = "tfy.jnsk@gmail.com"
-BUSINESS_TERMS_EN = [
-    ("What we sell", "A purchasing service. We buy an item in Japan on your "
-     "behalf and forward it to you. We are not the manufacturer or the retailer."),
-    ("Price", "¥2,500 per shipment plus 20% of each item (minimum ¥500 an "
-     "item). Shipping and customs duty are passed through at cost. Lotteries and "
-     "limited runs are quoted individually. You see the full figure before you pay."),
-    ("When you pay", "After we have secured the item, never before. Lottery "
-     "entries cost you nothing if we do not win."),
-    ("Delivery", "Japan Post, tracked. Pre-orders ship on the maker's schedule, "
-     "which is often several months out; we tell you the month before you order."),
-    ("Cancellations and refunds", "Once we have bought the item it cannot be "
-     "cancelled, because we bought it for you specifically. If we fail to obtain "
-     "it, you get a full refund. If it arrives damaged, send us photos and we "
-     "will make it right."),
-]
+#: **再開するときは必ず戻すこと。** 手数料を告知した時点でそのページは
+#: 広告になり、表示義務が復活する。氏名は省略できない。住所と電話は
+#: 「請求があれば遅滞なく提供する」と明示すれば省略でき、その一文が
+#: 省略の条件そのものなので消してはいけない。
+#:
+#: 停止前の文面は git 履歴にある（コミット 65dee3b「特商法表記をサイトの
+#: フッタに出す」）。**書き直さず、そこから戻す。**
+BUSINESS_OPERATOR = ""
+BUSINESS_CONTACT = ""
+BUSINESS_TERMS_EN: list[tuple[str, str]] = []
 
 STATUS_LABEL = {
     STATUS_LOTTERY: ("Lottery open", "lot"),
@@ -137,8 +127,17 @@ def render_site(
         f"<p class=\"meta\">{len(rows)} open items · {gated} with a verified Japan-only "
         f"barrier · updated {generated}</p>",
         _market_summary(rows, prices),
-        f"<p><a class=\"cta\" href=\"{html.escape(cfg.contact_url)}\">"
-        "Get alerts &amp; ask us to enter for you</a></p>",
+        # **勧誘と特商法表記は同じスイッチで動かす。**
+        # 手数料や「代わりに買います」を出した時点でページは広告になり、
+        # 表示義務が復活する。表記だけ消して勧誘を残すのは、義務を
+        # 果たさずに広告を出している状態で、消す前より悪い。
+        (
+            f"<p><a class=\"cta\" href=\"{html.escape(cfg.contact_url)}\">"
+            "Get alerts &amp; ask us to enter for you</a></p>"
+            if BUSINESS_OPERATOR
+            else '<p class="meta">This tracker is no longer taking orders. '
+            "The listings below are kept as a record.</p>"
+        ),
         _filter_bar(cat_counts, gated),
         "</header>",
         "<main>",
@@ -216,12 +215,16 @@ def _market_summary(
 
 
 def _business_info() -> str:
-    """特商法表記。**全ページのフッタに出す**（表示義務は広告単位）。
+    """特商法表記。**運営者名が空なら何も出さない**。
 
-    住所と電話を省略する代わりに「請求があれば遅滞なく提供する」と
-    明示する必要があるので、この一文は消さないこと。消すと省略が
-    成立しなくなり、住所の掲載義務が復活する。
+    表示義務は「広告」に対してかかる。手数料や勧誘を載せている間は必須で、
+    載せるのをやめれば消える。事業を止めた状態で本名と個人のメールを
+    公開し続けても、義務を果たしているのではなく個人情報を晒しているだけ。
+
+    再開するときは `BUSINESS_OPERATOR` を戻せばそのまま復活する。
     """
+    if not BUSINESS_OPERATOR:
+        return ""
     rows = "".join(
         f"<dt>{html.escape(term)}</dt><dd>{html.escape(body)}</dd>"
         for term, body in BUSINESS_TERMS_EN
@@ -405,7 +408,7 @@ def _card(
     )
 
     extra = ""
-    if lottery and cfg is not None:
+    if lottery and cfg is not None and BUSINESS_OPERATOR:
         # 抽選は転送代行では原理的に代行できない。ここは自社に引く。
         extra = (
             f'<p class="act"><a href="{html.escape(cfg.contact_url)}">'

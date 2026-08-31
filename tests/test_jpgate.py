@@ -334,13 +334,14 @@ def test_untranslatable_title_yields_no_link():
     assert links == []
 
 
-def test_closed_lottery_card_sells_own_service_not_affiliate(tmp_path):
+def test_closed_lottery_card_sells_own_service_not_affiliate(tmp_path, monkeypatch):
     """終了した抽選のカードは、アフィリではなく自社の次回案内を出す。
 
     抽選は転送代行では原理的に代行できないので、ここを他社に流すと
     自分の堀を売ることになる。カードの描画まで含めて固定する。
     """
     from jpgate import config as cm
+    from jpgate import publish as pub
     from jpgate.publish import render_site
 
     store = Store(tmp_path / "t.sqlite")
@@ -349,8 +350,13 @@ def test_closed_lottery_card_sells_own_service_not_affiliate(tmp_path):
     )
     cfg = cm.load()
     cfg.affiliate = ENABLED
+    # 営業中でなければ自社の案内も出ないので、その状態にして確かめる
+    # （2026-08-31 に事業を停止し、勧誘は BUSINESS_OPERATOR で束ねた）。
+    monkeypatch.setattr(pub, "BUSINESS_OPERATOR", "Test Operator")
     html = render_site([], {}, Glossary({}), cfg, closed_rows=store.recently_closed())
     assert "Ask us to enter the next round" in html
+    # **抽選をアフィリに流さない**のがこのテストの本題。
+    # 抽選は転送代行では原理的に代行できないので、他社に流すと自分の堀を売る。
     assert "sponsored nofollow" not in html
     store.close()
 
@@ -511,23 +517,43 @@ def test_customer_quote_has_no_japanese():
         assert not leaked, f"{weight}g の文面に日本語: {leaked}"
 
 
-def test_site_carries_the_legal_disclosure(tmp_path):
-    """特商法表記はフッタに必ず出る。**掲載0件でも出る**。
+def test_solicitation_and_disclosure_move_together(monkeypatch):
+    """**勧誘を出すなら特商法表記も出る。出さないなら両方出ない。**
 
-    表示義務は「広告」単位なので、商品が並んでいない日でも
-    勧誘しているページであることに変わりはない。
+    表示義務は「広告」に対してかかる。手数料や「代わりに買います」を
+    載せた時点でそのページは広告になり、氏名の表示が要る。
 
-    住所・電話を省略する条件は「請求があれば遅滞なく提供する」と
-    書いてあることなので、その一文が消えたら省略が成立しなくなる。
-    ここが落ちたら文言を戻すこと。
+    危ないのは片方だけ動かすこと:
+      - 表記だけ消して勧誘を残す → 義務を果たさずに広告を出している状態
+      - 勧誘だけ消して表記を残す → 事業をしていないのに本名を晒している
+
+    2026-08-31 に事業を停止したときは前者を踏みかけた（表記を消す実装を
+    先に入れ、CTA が残っていた）。以来ひとつのスイッチに束ねてある。
+
+    住所・電話を省略する条件は「請求があれば遅滞なく提供する」と書いて
+    あること。営業中の分岐でその一文が消えたら省略が成立しなくなる。
     """
     from jpgate import config as cm
-    from jpgate.publish import BUSINESS_CONTACT, BUSINESS_OPERATOR, render_site
+    from jpgate import publish as pub
 
-    page = render_site([], {}, Glossary({}), cm.load(), closed_rows=[])
-    assert BUSINESS_OPERATOR in page
-    assert BUSINESS_CONTACT in page
+    cfg = cm.load()
+
+    # 停止中（いまの状態）: 名前もメールも勧誘も出ない。
+    page = pub.render_site([], {}, Glossary({}), cfg, closed_rows=[])
+    assert "Business information" not in page
+    assert "ask us to enter for you" not in page
+    assert cfg.contact_url not in page
+
+    # 営業中に戻したら、勧誘と表記が**両方**復活する。
+    monkeypatch.setattr(pub, "BUSINESS_OPERATOR", "Test Operator")
+    monkeypatch.setattr(pub, "BUSINESS_CONTACT", "test@example.com")
+    monkeypatch.setattr(
+        pub, "BUSINESS_TERMS_EN", [("What we sell", "A purchasing service.")]
+    )
+    page = pub.render_site([], {}, Glossary({}), cfg, closed_rows=[])
+    assert "Test Operator" in page
     assert "provided without delay on request" in page
+    assert "ask us to enter for you" in page
 
 
 def test_fullwidth_model_codes_become_searchable():
