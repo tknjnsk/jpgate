@@ -719,6 +719,32 @@ def write(cfg: Config, site_html: str, x_posts: str) -> tuple[Path, Path]:
     # Jekyll に処理させない。処理させると _ 始まりのファイルが消えるなど
     # 予期しない加工が入る。素の静的ファイルとして出したい。
     (cfg.site_dir / ".nojekyll").write_text("", encoding="utf-8")
+
+    # robots.txt と sitemap.xml。
+    #
+    # **無くても巡回自体は起こる**が、Search Console に登録するときに
+    # sitemap の URL を求められる。14日運用して検索に1件も載っていない
+    # 状態だったので、登録の前提をここで用意しておく。
+    #
+    # lastmod は毎時変わる。**嘘ではない**（実際に毎時作り直している）が、
+    # 中身が変わっていないのに新しい日付を出し続けると信用されなくなる
+    # ので、日付までにして時刻は出さない。
+    if cfg.site_url:
+        base = cfg.site_url.rstrip("/")
+        (cfg.site_dir / "robots.txt").write_text(
+            "User-agent: *\nAllow: /\n\nSitemap: " + base + "/sitemap.xml\n",
+            encoding="utf-8",
+        )
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        (cfg.site_dir / "sitemap.xml").write_text(
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+            f"<url><loc>{html.escape(base)}/</loc>"
+            f"<lastmod>{today}</lastmod>"
+            "<changefreq>daily</changefreq></url>\n"
+            "</urlset>\n",
+            encoding="utf-8",
+        )
     return index, queue
 
 
